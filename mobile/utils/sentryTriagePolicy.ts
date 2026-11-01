@@ -1,3 +1,5 @@
+import { isBenignConnectivityError } from "./networkErrors";
+
 export type AuthSessionTransition = "signed_in" | "signed_out" | "session_refresh";
 
 export function resolveAuthSessionTransition(
@@ -42,12 +44,17 @@ export function resolveSentryReplaySampleRates(input: {
 }
 
 /**
- * Exchange-rate fetches are background, non-critical reads. When the auth
- * session is missing (cold start before restore, refresh failed, sign-out
- * race), fetchWithAuth throws "Not authenticated" — expected, not a bug.
- * See Sentry REACT-NATIVE-24.
+ * Exchange-rate fetches are background, non-critical reads. Missing auth
+ * (cold start / sign-out race), client timeouts, gateway 504s, and other
+ * connectivity failures already fall back to disk or preview rates — they
+ * must not page as product errors. See Sentry REACT-NATIVE-24 / 27.
  */
 export function shouldReportRatesFetchError(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.trim() !== "Not authenticated";
+  const message = (error instanceof Error ? error.message : String(error)).trim();
+  if (message === "Not authenticated") return false;
+  if (isBenignConnectivityError(error)) return false;
+  if (/HTTP error! status: 504/i.test(message)) return false;
+  if (/gateway timeout/i.test(message)) return false;
+  if (/request timed out/i.test(message)) return false;
+  return true;
 }

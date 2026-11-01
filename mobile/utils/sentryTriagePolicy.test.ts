@@ -69,6 +69,29 @@ Deno.test("auth session transitions stay PII-free and stable", () => {
 Deno.test("rates fetch: missing session is expected noise, not a Sentry error (REACT-NATIVE-24)", () => {
   assertEquals(shouldReportRatesFetchError(new Error("Not authenticated")), false);
   assertEquals(shouldReportRatesFetchError("Not authenticated"), false);
-  assertEquals(shouldReportRatesFetchError(new Error("Request timed out")), true);
   assertEquals(shouldReportRatesFetchError(new Error("Internal server error")), true);
+});
+
+Deno.test("rates fetch: timeout and gateway 504 are non-fatal fallbacks (REACT-NATIVE-24/27)", () => {
+  assertEquals(
+    shouldReportRatesFetchError(
+      new Error("Request timed out. Check your connection and try again."),
+    ),
+    false,
+  );
+  assertEquals(shouldReportRatesFetchError(new Error("Request timed out")), false);
+  assertEquals(
+    shouldReportRatesFetchError(new Error("HTTP error! status: 504")),
+    false,
+  );
+  assertEquals(
+    shouldReportRatesFetchError(new Error("Gateway Timeout")),
+    false,
+  );
+  assertEquals(
+    shouldReportRatesFetchError(
+      new Error("Unable to connect. Check your internet connection and try again."),
+    ),
+    false,
+  );
 });

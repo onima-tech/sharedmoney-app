@@ -1,3 +1,4 @@
+import { APP_VERSION } from "../constants/version";
 import { supabase } from "../supabase";
 import { ApiErrorResponse } from "../types/api";
 import {
@@ -7,6 +8,7 @@ import {
 import { formatNetworkErrorMessage } from "./networkErrors";
 
 const TOKEN_REFRESH_BUFFER_SECONDS = 60;
+const DEFAULT_FETCH_TIMEOUT_MS = 15000;
 const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
 /**
@@ -73,7 +75,7 @@ export async function getAuthToken(): Promise<string | null> {
 async function fetchWithTimeout(
   url: string,
   options: RequestInit = {},
-  timeoutMs = 15000
+  timeoutMs = DEFAULT_FETCH_TIMEOUT_MS
 ): Promise<Response> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
@@ -89,12 +91,11 @@ async function fetchWithTimeout(
   }
 }
 
-import { APP_VERSION } from "../constants/version";
-
 export async function fetchWithAuth(
   endpoint: string,
   options: RequestInit = {},
   unauthorizedPolicy: UnauthorizedPolicy = "sign-out-local",
+  timeoutMs = DEFAULT_FETCH_TIMEOUT_MS,
 ): Promise<Response> {
   if (!API_URL) {
     throw new Error(
@@ -119,7 +120,7 @@ export async function fetchWithAuth(
         "X-App-Version": APP_VERSION,
         ...options.headers,
       },
-    });
+    }, timeoutMs);
   } catch (networkError: any) {
     // Handle network-level errors (connection refused, timeout, DNS failure, etc.)
     const errorName = networkError?.name || "Unknown";
