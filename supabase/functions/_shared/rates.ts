@@ -1,6 +1,12 @@
 import { isValidIsoCurrency, normalizeIsoCurrency } from "./isoCurrencies.ts";
 
 export const MARKET_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
+/** Bound how long a stale-cache hit waits on upstream refresh before serving stale. */
+export const STALE_REFRESH_DEADLINE_MS = 2500;
+/** Per-provider HTTP timeout. Kept short so one hung upstream cannot approach gateway limits. */
+export const UPSTREAM_FETCH_TIMEOUT_MS = 4000;
+/** After the first provider succeeds, briefly wait for the second to fill missing quotes. */
+export const SECOND_PROVIDER_GRACE_MS = 400;
 export const FRANKFURTER_URL = "https://api.frankfurter.dev/v1/latest?base=USD";
 export const EXCHANGE_RATE_API_URL = "https://open.er-api.com/v6/latest/USD";
 
@@ -48,6 +54,46 @@ export function isCacheFresh(
     : Date.parse(updatedAt);
   if (Number.isNaN(timestamp)) return false;
   return now - timestamp < ttlMs;
+}
+
+export type MarketRefreshOutcome =
+  | { kind: "fresh" }
+  | { kind: "stale" }
+  | { kind: "empty" };
+
+/**
+ * Decide what a /rates GET should return when the Postgres cache may be stale
+ * and an upstream refresh may still be in flight.
+ */
+export function chooseMarketBookOutcome(input: {
+  hasCache: boolean;
+  cacheFresh: boolean;
+  freshAvailable: boolean;
+  refreshTimedOut: boolean;
+}): MarketRefreshOutcome {
+  if (input.hasCache && input.cacheFresh) return { kind: "fresh" };
+  if (input.freshAvailable) return { kind: "fresh" };
+  if (input.hasCache && (input.refreshTimedOut || !input.freshAvailable)) {
+    return { kind: "stale" };
+  }
+  return { kind: "empty" };
+}
+
+export async function raceWithDeadline<T>(
+  promise: Promise<T>,
+  deadlineMs: number,
+): Promise<{ timedOut: false; value: T } | { timedOut: true; value?: undefined }> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise.then((value) => ({ timedOut: false as const, value })),
+      new Promise<{ timedOut: true }>((resolve) => {
+        timer = setTimeout(() => resolve({ timedOut: true }), deadlineMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

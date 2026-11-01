@@ -11,7 +11,11 @@ import {
   mergeUsdRates,
   parseExchangeRateApiResponse,
   parseFrankfurterResponse,
+  raceWithDeadline,
   rowsToUsdRates,
+  SECOND_PROVIDER_GRACE_MS,
+  STALE_REFRESH_DEADLINE_MS,
+  UPSTREAM_FETCH_TIMEOUT_MS,
   type GroupRateRow,
   usdRatesToRows,
   validateGroupRateInput,
@@ -19,8 +23,6 @@ import {
 import { createEmptyResponse, createSuccessResponse } from "../_shared/response.ts";
 import { isValidUUID, validateBodySize } from "../_shared/validation.ts";
 import { requireMinVersion } from "../_shared/version-check.ts";
-
-const FETCH_TIMEOUT_MS = 8000;
 
 function createServiceClient() {
   if (!SUPABASE_SERVICE_ROLE_KEY) return null;
@@ -34,7 +36,7 @@ function createServiceClient() {
 
 async function fetchJson(url: string): Promise<unknown> {
   const response = await fetch(url, {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    signal: AbortSignal.timeout(UPSTREAM_FETCH_TIMEOUT_MS),
     headers: { Accept: "application/json" },
   });
   if (!response.ok) {
@@ -43,40 +45,91 @@ async function fetchJson(url: string): Promise<unknown> {
   return response.json();
 }
 
+type ParsedProviderBook = {
+  asOf: string;
+  usdRates: Record<string, number>;
+  provider: "frankfurter" | "exchangerate-api";
+};
+
+async function fetchProviderBook(
+  provider: "frankfurter" | "exchangerate-api",
+): Promise<ParsedProviderBook> {
+  if (provider === "frankfurter") {
+    const parsed = parseFrankfurterResponse(await fetchJson(FRANKFURTER_URL));
+    if (!parsed) throw new Error("Frankfurter returned an empty rate book");
+    return { ...parsed, provider };
+  }
+  const parsed = parseExchangeRateApiResponse(await fetchJson(EXCHANGE_RATE_API_URL));
+  if (!parsed) throw new Error("ExchangeRate-API returned an empty rate book");
+  return { ...parsed, provider };
+}
+
+/**
+ * Take the first healthy provider, then briefly wait for the second so INR
+ * (and other Frankfurter gaps) can still be filled without blocking on a hang.
+ */
 async function fetchFreshMarketRates(): Promise<{
   usdRates: Record<string, number>;
   asOf: string;
   providers: string[];
   providerFor: (code: string) => string;
 } | null> {
-  const [frankfurterResult, fallbackResult] = await Promise.allSettled([
-    fetchJson(FRANKFURTER_URL),
-    fetchJson(EXCHANGE_RATE_API_URL),
-  ]);
+  const frankfurterPromise = fetchProviderBook("frankfurter");
+  const fallbackPromise = fetchProviderBook("exchangerate-api");
 
-  const frankfurter = frankfurterResult.status === "fulfilled"
-    ? parseFrankfurterResponse(frankfurterResult.value)
+  const firstRace = await Promise.any([
+    frankfurterPromise,
+    fallbackPromise,
+  ]).then((book) => book).catch(() => null);
+
+  if (!firstRace) {
+    const [frankfurterResult, fallbackResult] = await Promise.allSettled([
+      frankfurterPromise,
+      fallbackPromise,
+    ]);
+    if (frankfurterResult.status === "rejected") {
+      log.warn("Frankfurter market fetch failed", "rates", {
+        error: frankfurterResult.reason instanceof Error
+          ? frankfurterResult.reason.message
+          : String(frankfurterResult.reason),
+      });
+    }
+    if (fallbackResult.status === "rejected") {
+      log.warn("Fallback market fetch failed", "rates", {
+        error: fallbackResult.reason instanceof Error
+          ? fallbackResult.reason.message
+          : String(fallbackResult.reason),
+      });
+    }
+    return null;
+  }
+
+  const pendingSecond = firstRace.provider === "frankfurter"
+    ? fallbackPromise
+    : frankfurterPromise;
+  const secondRace = await raceWithDeadline(
+    pendingSecond.then((book) => book).catch(() => null),
+    SECOND_PROVIDER_GRACE_MS,
+  );
+  const second = secondRace.timedOut ? null : secondRace.value;
+
+  const frankfurter = firstRace.provider === "frankfurter"
+    ? firstRace
+    : second?.provider === "frankfurter"
+    ? second
     : null;
-  const fallback = fallbackResult.status === "fulfilled"
-    ? parseExchangeRateApiResponse(fallbackResult.value)
+  const fallback = firstRace.provider === "exchangerate-api"
+    ? firstRace
+    : second?.provider === "exchangerate-api"
+    ? second
     : null;
 
-  if (frankfurterResult.status === "rejected") {
-    log.warn("Frankfurter market fetch failed", "rates", {
-      error: frankfurterResult.reason instanceof Error
-        ? frankfurterResult.reason.message
-        : String(frankfurterResult.reason),
+  if (secondRace.timedOut) {
+    log.warn("Second rates provider missed grace window", "rates", {
+      firstProvider: firstRace.provider,
+      graceMs: SECOND_PROVIDER_GRACE_MS,
     });
   }
-  if (fallbackResult.status === "rejected") {
-    log.warn("Fallback market fetch failed", "rates", {
-      error: fallbackResult.reason instanceof Error
-        ? fallbackResult.reason.message
-        : String(fallbackResult.reason),
-    });
-  }
-
-  if (!frankfurter && !fallback) return null;
 
   const frankfurterCodes = new Set(Object.keys(frankfurter?.usdRates || {}));
   const providers = [
@@ -120,50 +173,76 @@ async function loadMarketBook(serviceClient: ReturnType<typeof createServiceClie
     return latest;
   }, null);
 
+  const cachedProviders = Array.from(
+    new Set(cached.map((row) => row.provider).filter(Boolean)),
+  );
+  const cachedAsOf = cached.reduce<string | null>((latest, row) => {
+    if (!latest || row.as_of > latest) return row.as_of;
+    return latest;
+  }, null);
+  const cachedBook = {
+    usdRates: rowsToUsdRates(cached),
+    asOf: cachedAsOf,
+    providers: cachedProviders,
+  };
+
   if (cached.length > 0 && isCacheFresh(newest)) {
-    const providers = Array.from(new Set(cached.map((row) => row.provider).filter(Boolean)));
-    const asOf = cached.reduce<string | null>((latest, row) => {
-      if (!latest || row.as_of > latest) return row.as_of;
-      return latest;
-    }, null);
     return {
-      usdRates: rowsToUsdRates(cached),
-      asOf,
+      ...cachedBook,
       stale: false,
-      providers,
     };
   }
 
-  const fresh = await fetchFreshMarketRates();
-  if (fresh) {
-    if (reader) {
-      const rows = usdRatesToRows(fresh.usdRates, fresh.asOf, fresh.providerFor);
-      const { error } = await reader.from("exchange_rates").upsert(rows, {
-        onConflict: "base_currency,quote_currency",
-      });
-      if (error) {
-        log.warn("Failed to cache exchange rates", "rates", { error: error.message });
-      }
+  const refreshPromise = fetchFreshMarketRates();
+
+  const persistFresh = async (
+    fresh: NonNullable<Awaited<ReturnType<typeof fetchFreshMarketRates>>>,
+  ) => {
+    if (!reader) return;
+    const rows = usdRatesToRows(fresh.usdRates, fresh.asOf, fresh.providerFor);
+    const { error } = await reader.from("exchange_rates").upsert(rows, {
+      onConflict: "base_currency,quote_currency",
+    });
+    if (error) {
+      log.warn("Failed to cache exchange rates", "rates", { error: error.message });
     }
+  };
+
+  // Stale cache: bound upstream wait so gateway 504s cannot strand clients.
+  if (cached.length > 0) {
+    const raced = await raceWithDeadline(refreshPromise, STALE_REFRESH_DEADLINE_MS);
+    if (!raced.timedOut && raced.value) {
+      await persistFresh(raced.value);
+      return {
+        usdRates: raced.value.usdRates,
+        asOf: raced.value.asOf,
+        stale: false,
+        providers: raced.value.providers,
+      };
+    }
+    if (raced.timedOut) {
+      log.warn("Serving stale exchange rates after refresh deadline", "rates", {
+        deadlineMs: STALE_REFRESH_DEADLINE_MS,
+      });
+      // Best-effort late write if the isolate stays alive after the response.
+      void refreshPromise.then((fresh) => {
+        if (fresh) return persistFresh(fresh);
+      }).catch(() => {});
+    }
+    return {
+      ...cachedBook,
+      stale: true,
+    };
+  }
+
+  const fresh = await refreshPromise;
+  if (fresh) {
+    await persistFresh(fresh);
     return {
       usdRates: fresh.usdRates,
       asOf: fresh.asOf,
       stale: false,
       providers: fresh.providers,
-    };
-  }
-
-  if (cached.length > 0) {
-    const providers = Array.from(new Set(cached.map((row) => row.provider).filter(Boolean)));
-    const asOf = cached.reduce<string | null>((latest, row) => {
-      if (!latest || row.as_of > latest) return row.as_of;
-      return latest;
-    }, null);
-    return {
-      usdRates: rowsToUsdRates(cached),
-      asOf,
-      stale: true,
-      providers,
     };
   }
 
