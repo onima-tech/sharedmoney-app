@@ -32,6 +32,7 @@
       "env": {
         "EAS_BUILD": "true",
         "EXPO_PUBLIC_APP_URL": "https://sharedmoney.app/app",
+        "EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE": "1.0",
         "REQUIRE_ANDROID_PUSH_CONFIG": "true",
         "SENTRY_ORG": "jobappagent",
         "SENTRY_PROJECT": "react-native"
