@@ -143,11 +143,20 @@ import {
   getSentryRuntimeTags,
   isSentryDiagnosticUrl,
 } from "./utils/sentryDiagnostics";
+import { SentryScreenLoadProbe } from "./components/SentryScreenLoadProbe";
 import {
   applySentryDeviceTriageContext,
   setSentryAppStateTag,
   setSentryRouteTag,
 } from "./utils/sentryTelemetry";
+import { recordSentryRouteNavigation } from "./utils/sentryTracing";
+import {
+  resolveSentryTracePropagationTargets,
+  resolveSentryTracesSampleRate,
+  scrubSentryBreadcrumb,
+  scrubSentryErrorEvent,
+  scrubSentryTransaction,
+} from "./utils/sentryTracingPolicy";
 import { resolveSentryReplaySampleRates } from "./utils/sentryTriagePolicy";
 
 const SENTRY_DIAGNOSTICS_ENABLED =
@@ -916,6 +925,12 @@ function AppContent() {
     log("[AppContent] State", JSON.parse(snapshot), "debug");
     setSentryRouteTag(currentRoute);
   }, [currentRoute, session, loading, profileLoading, profile]);
+
+  // Custom router (no React Navigation): open an idle navigation transaction
+  // so app-start, TTID, frames and fetch spans attach to a real screen span.
+  useEffect(() => {
+    recordSentryRouteNavigation(currentRoute);
+  }, [currentRoute]);
 
   // Persist AppState transitions for next-launch WatchdogTermination triage.
   useEffect(() => {
@@ -1690,10 +1705,26 @@ if (!process.env.EXPO_PUBLIC_SENTRY_DSN) {
     // Volatile free-memory native contexts are still omitted by the SDK by design.
     enableWatchdogTerminationTracking: true,
 
-    // Performance
-    tracesSampleRate: Number(
-      process.env.EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE ?? "0.1"
-    ),
+    // Performance — already compiled into the installed @sentry/react-native
+    // native module; JS/OTA can enable and sample without a store rebuild.
+    enableAutoPerformanceTracing: true,
+    enableAppStartTracking: true,
+    enableNativeFramesTracking: true,
+    enableStallTracking: true,
+    // 1.0 while traffic is tiny; override via EXPO_PUBLIC_SENTRY_TRACES_SAMPLE_RATE.
+    tracesSampleRate: resolveSentryTracesSampleRate(),
+    // Propagate to Supabase REST + edge functions for linked fetch spans.
+    tracePropagationTargets: resolveSentryTracePropagationTargets(),
+    // Keep URLs; strip Authorization / tokens from span + breadcrumb payloads.
+    beforeSend(event) {
+      return scrubSentryErrorEvent(event);
+    },
+    beforeSendTransaction(event) {
+      return scrubSentryTransaction(event);
+    },
+    beforeBreadcrumb(breadcrumb) {
+      return scrubSentryBreadcrumb(breadcrumb);
+    },
     integrations: [
       // Cast through `any` to avoid TypeScript issues with the
       // experimental mobile replay API typings.
@@ -1701,6 +1732,8 @@ if (!process.env.EXPO_PUBLIC_SENTRY_DSN) {
         maskAllText: true,
         maskAllImages: true,
       }) as any,
+      // Instrument the shared Supabase JS client (REST / auth / functions).
+      Sentry.supabaseIntegration({ supabaseClient: supabase }),
     ],
 
     // Session Replay — keep 100% of error sessions; lower always-on sampling
@@ -1732,7 +1765,7 @@ if (!process.env.EXPO_PUBLIC_SENTRY_DSN) {
 // local/dev builds stay quiet when SharedMoney Production analytics is unset.
 initializePostHog();
 
-export default function App() {
+function App() {
   const colorScheme = useColorScheme();
 
   return (
@@ -1745,6 +1778,10 @@ export default function App() {
     </SafeAreaProvider>
   );
 }
+
+// Wrap so app-start ends on first React mount (not JS init). Safe OTA change
+// against the already-linked @sentry/react-native native module.
+export default Sentry.wrap(App);
 
 function ThemedAppShell() {
   const { resolvedTheme } = useThemePreference();
@@ -1774,6 +1811,7 @@ function ThemedAppShell() {
         >
           <UpgradeProvider>
             <AuthProvider>
+              <SentryScreenLoadProbe />
               <AppFrame />
             </AuthProvider>
           </UpgradeProvider>
