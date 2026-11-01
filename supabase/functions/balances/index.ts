@@ -6,6 +6,12 @@ import { createEmptyResponse, createSuccessResponse } from '../_shared/response.
 import { fetchUserEmails } from '../_shared/user-email.ts';
 import { fetchUserProfiles } from '../_shared/user-profiles.ts';
 import { isValidUUID } from '../_shared/validation.ts';
+import {
+  loadGroupLedger,
+  type GroupLedgerSnapshot,
+  type LedgerParticipant,
+  type LedgerTransaction,
+} from './load-group-ledger.ts';
 
 interface Balance {
   user_id: string;
@@ -29,10 +35,6 @@ interface BalancesResponse {
   group_stats?: GroupStatsResponse;
 }
 
-interface GroupMember {
-  user_id: string;
-}
-
 interface Group {
   id: string;
   name: string;
@@ -51,8 +53,8 @@ interface TransactionWithSplits {
   description?: string;
   date?: string;
   type?: string;
-  paid_by: string | null; // Legacy
-  paid_by_participant_id?: string | null; // New
+  paid_by: string | null;
+  paid_by_participant_id?: string | null;
   currency: string;
   split_among?: string[] | null;
   transaction_splits?: TransactionSplit[];
@@ -105,51 +107,81 @@ interface GroupStatsResponse {
 
 /**
  * Balances Edge Function
- * 
+ *
  * Calculates and returns balances between users in groups:
  * - GET /balances?group_id=xxx - Get balances (optionally filtered by group)
- * 
+ *
  * Returns both per-group balances and overall balances across all groups.
- * 
+ *
  * @route /functions/v1/balances
  * @requires Authentication
  */
 
-async function calculateGroupBalances(
-  supabase: any,
-  groupId: string,
-  currentUserId: string,
-  currentUserEmail: string | null
-): Promise<Balance[]> {
-  const { data: transactions, error } = await supabase
-    .from('transactions')
-    .select(`
-      id,
-      amount,
-      paid_by_participant_id,
-      currency,
-      transaction_splits (
-        participant_id,
-        amount
-      )
-    `)
-    .eq('group_id', groupId)
-    .eq('type', 'expense');
+function buildParticipantMaps(
+  participants: LedgerParticipant[],
+  userIdToEmail: Map<string, string>
+) {
+  const canonicalParticipantId = buildParticipantCanonicalResolver(
+    participants.map((p) => ({
+      id: p.id,
+      user_id: p.user_id,
+      email: p.email,
+      type: p.type || 'member',
+    })),
+    userIdToEmail
+  );
 
-  if (error) {
-    log.error('Error fetching transactions', 'balance-calculation', { groupId, error: error.message });
-    throw error;
+  const participantToUserMap = new Map<string, string>();
+  const participantToEmailMap = new Map<string, string>();
+  const participantToFullNameMap = new Map<string, string>();
+  const participantToAvatarMap = new Map<string, string>();
+
+  const rowsByCanonical = new Map<string, LedgerParticipant[]>();
+  for (const p of participants) {
+    const cid = canonicalParticipantId(p.id);
+    if (!rowsByCanonical.has(cid)) rowsByCanonical.set(cid, []);
+    rowsByCanonical.get(cid)!.push(p);
+  }
+  for (const [cid, rows] of rowsByCanonical) {
+    const withUser = rows.find((r) => r.user_id);
+    if (withUser?.user_id) participantToUserMap.set(cid, withUser.user_id);
+    const emailSource =
+      rows.find((r) => r.user_id && r.email) || rows.find((r) => r.email);
+    if (emailSource?.email) participantToEmailMap.set(cid, emailSource.email);
+    const nameSource =
+      rows.find((r) => r.user_id && r.full_name) || rows.find((r) => r.full_name);
+    if (nameSource?.full_name) {
+      participantToFullNameMap.set(cid, nameSource.full_name);
+    }
+    const avatarSource =
+      rows.find((r) => r.user_id && r.avatar_url) ||
+      rows.find((r) => r.avatar_url);
+    if (avatarSource?.avatar_url) {
+      participantToAvatarMap.set(cid, avatarSource.avatar_url);
+    }
   }
 
-  const { data: members } = await supabase
-    .from('group_members')
-    .select('user_id')
-    .eq('group_id', groupId);
+  return {
+    canonicalParticipantId,
+    participantToUserMap,
+    participantToEmailMap,
+    participantToFullNameMap,
+    participantToAvatarMap,
+  };
+}
 
-  const memberIds = new Set((members || []).map((m: GroupMember) => m.user_id));
-  
-  // Map<ParticipantId/UserId, Map<Currency, Amount>>
-  // We'll track by user_id where possible, fallback to participant_id for invited users
+function calculateGroupBalancesFromLedger(
+  ledger: GroupLedgerSnapshot,
+  userIdToEmail: Map<string, string>
+): Balance[] {
+  const {
+    canonicalParticipantId,
+    participantToUserMap,
+    participantToEmailMap,
+    participantToFullNameMap,
+    participantToAvatarMap,
+  } = buildParticipantMaps(ledger.participants, userIdToEmail);
+
   const balanceMap = new Map<string, Map<string, number>>();
 
   const updateBalance = (key: string, currency: string, amount: number) => {
@@ -161,75 +193,10 @@ async function calculateGroupBalances(
     userBalances.set(currency, currentAmount + amount);
   };
 
-  // 1. Fetch all participants to resolve user_ids and names
-  const { data: participants } = await supabase
-    .from('participants')
-    .select('id, user_id, email, full_name, avatar_url, type')
-    .eq('group_id', groupId);
-
-  const participantUserIds: string[] = Array.from(
-    new Set(
-      (participants || [])
-        .map((p: { user_id?: string | null }) => p.user_id)
-        .filter(
-          (id: string | null | undefined): id is string =>
-            typeof id === 'string' && id.length > 0
-        )
-    )
-  );
-  const userIdToEmail = await fetchUserEmails(
-    participantUserIds,
-    currentUserId,
-    currentUserEmail
-  );
-
-  const canonicalParticipantId = buildParticipantCanonicalResolver(
-    (participants || []) as {
-      id: string;
-      user_id: string | null;
-      email: string | null;
-      type: string;
-    }[],
-    userIdToEmail
-  );
-
-  const participantToUserMap = new Map<string, string>();
-  const participantToEmailMap = new Map<string, string>();
-  const participantToFullNameMap = new Map<string, string>();
-  const participantToAvatarMap = new Map<string, string>();
-
-  if (participants) {
-    const rowsByCanonical = new Map<string, any[]>();
-    for (const p of participants as any[]) {
-      const cid = canonicalParticipantId(p.id);
-      if (!rowsByCanonical.has(cid)) rowsByCanonical.set(cid, []);
-      rowsByCanonical.get(cid)!.push(p);
-    }
-    for (const [cid, rows] of rowsByCanonical) {
-      const withUser = rows.find((r) => r.user_id);
-      if (withUser?.user_id) participantToUserMap.set(cid, withUser.user_id);
-      const emailSource =
-        rows.find((r) => r.user_id && r.email) || rows.find((r) => r.email);
-      if (emailSource?.email) participantToEmailMap.set(cid, emailSource.email);
-      const nameSource =
-        rows.find((r) => r.user_id && r.full_name) || rows.find((r) => r.full_name);
-      if (nameSource?.full_name) {
-        participantToFullNameMap.set(cid, nameSource.full_name);
-      }
-      const avatarSource =
-        rows.find((r) => r.user_id && r.avatar_url) ||
-        rows.find((r) => r.avatar_url);
-      if (avatarSource?.avatar_url) {
-        participantToAvatarMap.set(cid, avatarSource.avatar_url);
-      }
-    }
-  }
-
-  // Process Transactions
-  for (const tx of (transactions || []) as TransactionWithSplits[]) {
+  for (const tx of ledger.transactions) {
     const totalAmount = typeof tx.amount === 'string' ? parseFloat(tx.amount) : tx.amount;
     const currency = tx.currency;
-    
+
     if (isNaN(totalAmount)) continue;
 
     const paidByPid = tx.paid_by_participant_id;
@@ -237,42 +204,28 @@ async function calculateGroupBalances(
 
     const paidByKey = canonicalParticipantId(paidByPid);
 
-      if (tx.transaction_splits && Array.isArray(tx.transaction_splits)) {
-        const splits = tx.transaction_splits
-          .map((s: TransactionSplit) => {
-            if (!s) return undefined;
-            const amount = typeof s.amount === 'string' ? parseFloat(s.amount) : s.amount;
-            if (!s.participant_id || isNaN(amount)) return undefined;
-            
-            return { pid: canonicalParticipantId(s.participant_id), amount };
-          })
-          .filter((s): s is { pid: string; amount: number } => !!s);
+    if (tx.transaction_splits && Array.isArray(tx.transaction_splits)) {
+      const splits = tx.transaction_splits
+        .map((s) => {
+          if (!s) return undefined;
+          const amount = typeof s.amount === 'string' ? parseFloat(s.amount) : s.amount;
+          if (!s.participant_id || isNaN(amount)) return undefined;
 
-        if (splits.length === 0) continue;
+          return { pid: canonicalParticipantId(s.participant_id), amount };
+        })
+        .filter((s): s is { pid: string; amount: number } => !!s);
 
-        // Add credit to payer
-        updateBalance(paidByKey, currency, totalAmount);
+      if (splits.length === 0) continue;
 
-        // Add debit to each split participant
-        for (const split of splits) {
-          updateBalance(split.pid, currency, -split.amount);
-        }
+      updateBalance(paidByKey, currency, totalAmount);
+
+      for (const split of splits) {
+        updateBalance(split.pid, currency, -split.amount);
       }
     }
-
-  // From settlements
-  const { data: settlements, error: settlementsError } = await supabase
-    .from('settlements')
-    .select('id, group_id, from_participant_id, to_participant_id, amount, currency')
-    .eq('group_id', groupId);
-
-  if (settlementsError) {
-    log.error('Error fetching settlements', 'balance-calculation', { groupId, error: settlementsError.message });
-    throw settlementsError;
   }
 
-  // Process Settlements
-  for (const settlement of (settlements || [])) {
+  for (const settlement of ledger.settlements) {
     const fromKey = settlement.from_participant_id
       ? canonicalParticipantId(settlement.from_participant_id)
       : null;
@@ -280,38 +233,33 @@ async function calculateGroupBalances(
       ? canonicalParticipantId(settlement.to_participant_id)
       : null;
 
-    if (!fromKey || !toKey) continue; 
-    
-    const settlementAmount = typeof settlement.amount === 'string' 
-      ? parseFloat(settlement.amount) 
+    if (!fromKey || !toKey) continue;
+
+    const settlementAmount = typeof settlement.amount === 'string'
+      ? parseFloat(settlement.amount)
       : settlement.amount;
     const currency = settlement.currency;
 
     if (isNaN(settlementAmount) || settlementAmount <= 0) continue;
 
-    // From (sender) is less in debt (Credit)
     updateBalance(fromKey, currency, settlementAmount);
-    // To (receiver) is less a creditor (Debit)
     updateBalance(toKey, currency, -settlementAmount);
   }
 
   const balances: Balance[] = [];
-  
+
   for (const [key, currencyMap] of balanceMap.entries()) {
-    // Return all balances (including current user) so frontend can calculate full graph
-    
     for (const [currency, amount] of currencyMap.entries()) {
       const roundedAmount = Math.round(amount * 100) / 100;
       if (Math.abs(roundedAmount) > 0.01) {
-        // Find user_id, email and full_name using PID maps
         const userId = participantToUserMap.get(key);
         const email = participantToEmailMap.get(key);
         const fullName = participantToFullNameMap.get(key);
         const avatarUrl = participantToAvatarMap.get(key);
-        
+
         balances.push({
-          user_id: userId || (isValidUUID(key) ? key : ''), // Return UserID if exists (crucial for aggregation)
-          participant_id: key, // KEY is now GUARANTEED to be Participant ID (UUID)
+          user_id: userId || (isValidUUID(key) ? key : ''),
+          participant_id: key,
           email: email,
           full_name: fullName || null,
           avatar_url: avatarUrl || null,
@@ -325,6 +273,36 @@ async function calculateGroupBalances(
   return balances;
 }
 
+async function calculateGroupBalances(
+  supabase: any,
+  groupId: string,
+  currentUserId: string,
+  currentUserEmail: string | null,
+  options?: { includeStatsFields?: boolean; ledger?: GroupLedgerSnapshot }
+): Promise<{ balances: Balance[]; ledger: GroupLedgerSnapshot }> {
+  const ledger = options?.ledger ?? await loadGroupLedger(supabase, groupId, {
+    includeStatsFields: options?.includeStatsFields,
+  });
+
+  const participantUserIds: string[] = Array.from(
+    new Set(
+      ledger.participants
+        .map((p) => p.user_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0)
+    )
+  );
+  const userIdToEmail = await fetchUserEmails(
+    participantUserIds,
+    currentUserId,
+    currentUserEmail
+  );
+
+  return {
+    balances: calculateGroupBalancesFromLedger(ledger, userIdToEmail),
+    ledger,
+  };
+}
+
 function addCurrencyAmount(
   target: Record<string, number>,
   currency: string,
@@ -334,47 +312,33 @@ function addCurrencyAmount(
   target[currency] = Math.round(((target[currency] || 0) + amount) * 100) / 100;
 }
 
-async function calculateGroupStats(
-  supabase: any,
-  groupId: string,
+function toStatsTransaction(tx: LedgerTransaction): TransactionWithSplits {
+  return {
+    id: tx.id,
+    amount: tx.amount,
+    description: tx.description,
+    date: tx.date,
+    type: tx.type,
+    paid_by: null,
+    paid_by_participant_id: tx.paid_by_participant_id,
+    currency: tx.currency,
+    transaction_splits: tx.transaction_splits,
+  };
+}
+
+function calculateGroupStatsFromLedger(
+  ledger: GroupLedgerSnapshot,
   currentUserId: string,
   balances: Balance[]
-): Promise<GroupStatsResponse> {
-  const { data: participants } = await supabase
-    .from('participants')
-    .select('id, user_id, email, full_name, avatar_url')
-    .eq('group_id', groupId);
+): GroupStatsResponse {
+  const participantMap = new Map<string, LedgerParticipant>();
+  for (const p of ledger.participants) {
+    participantMap.set(p.id, p);
+  }
 
-  const participantMap = new Map<string, {
-    id: string;
-    user_id?: string | null;
-    email?: string | null;
-    full_name?: string | null;
-    avatar_url?: string | null;
-  }>();
-  (participants || []).forEach((p: any) => participantMap.set(p.id, p));
-
-  const currentParticipantId = (participants || []).find((p: any) => p.user_id === currentUserId)?.id;
-
-  const { data: transactions } = await supabase
-    .from('transactions')
-    .select(`
-      id,
-      amount,
-      description,
-      date,
-      type,
-      paid_by_participant_id,
-      currency,
-      transaction_splits (
-        participant_id,
-        amount
-      )
-    `)
-    .eq('group_id', groupId)
-    .eq('type', 'expense')
-    .order('date', { ascending: false })
-    .order('id', { ascending: false });
+  const currentParticipantId = ledger.participants.find(
+    (p) => p.user_id === currentUserId
+  )?.id;
 
   const memberBreakdownMap = new Map<string, StatsMemberBreakdownEntry>();
   const groupTotal: Record<string, number> = {};
@@ -400,7 +364,8 @@ async function calculateGroupStats(
     return created;
   };
 
-  for (const tx of (transactions || []) as TransactionWithSplits[]) {
+  for (const rawTx of ledger.transactions) {
+    const tx = toStatsTransaction(rawTx);
     const amount = typeof tx.amount === 'string' ? Number.parseFloat(tx.amount) : tx.amount;
     const currency = tx.currency || 'USD';
     if (!Number.isFinite(amount)) continue;
@@ -546,13 +511,134 @@ Deno.serve(async (req: Request) => {
     const url = new URL(req.url);
     const groupId = url.searchParams.get('group_id');
     const includeStats = url.searchParams.get('include_stats') === 'true';
-    
+
     if (groupId && !isValidUUID(groupId)) {
       return createErrorResponse(400, 'Invalid group_id format. Expected UUID.', 'VALIDATION_ERROR', undefined, req);
     }
 
     if (includeStats && !groupId) {
       return createErrorResponse(400, 'group_id is required when include_stats=true', 'VALIDATION_ERROR', undefined, req);
+    }
+
+    // Single-group path (group details critical path): membership + group row in
+    // parallel, then one parallel ledger load reused for balances and stats.
+    if (groupId) {
+      const [membershipResult, groupResult] = await Promise.all([
+        supabase
+          .from('group_members')
+          .select('group_id')
+          .eq('group_id', groupId)
+          .eq('user_id', currentUserId)
+          .maybeSingle(),
+        supabase
+          .from('groups')
+          .select('id, name')
+          .eq('id', groupId)
+          .maybeSingle(),
+      ]);
+
+      if (!membershipResult.data) {
+        return createSuccessResponse({
+          group_balances: [],
+          overall_balances: [],
+        }, 200, 0, req);
+      }
+
+      const groupName = groupResult.data?.name || 'Unknown Group';
+
+      let balances: Balance[] = [];
+      let ledger: GroupLedgerSnapshot | null = null;
+      try {
+        const result = await calculateGroupBalances(
+          supabase,
+          groupId,
+          currentUserId,
+          currentUserEmail ?? null,
+          { includeStatsFields: includeStats }
+        );
+        balances = result.balances;
+        ledger = result.ledger;
+      } catch (error) {
+        log.error('Error calculating group balances', 'balances', {
+          groupId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        balances = [];
+      }
+
+      const groupBalances: GroupBalance[] = [{
+        group_id: groupId,
+        group_name: groupName,
+        balances,
+      }];
+
+      const overallBalanceMap = new Map<string, number>();
+      for (const balance of balances) {
+        if (balance.user_id !== currentUserId) continue;
+        const current = overallBalanceMap.get(balance.currency) || 0;
+        overallBalanceMap.set(balance.currency, current + balance.amount);
+      }
+      const overallBalances: Balance[] = [];
+      for (const [currency, amount] of overallBalanceMap.entries()) {
+        const roundedAmount = Math.round(amount * 100) / 100;
+        if (Math.abs(roundedAmount) > 0.01) {
+          overallBalances.push({
+            user_id: currentUserId,
+            amount: roundedAmount,
+            currency,
+          });
+        }
+      }
+
+      const allUserIds = new Set<string>();
+      for (const b of balances) {
+        if (b.user_id) allUserIds.add(b.user_id);
+      }
+      for (const b of overallBalances) {
+        allUserIds.add(b.user_id);
+      }
+
+      if (allUserIds.size > 0) {
+        const userIdsArray = Array.from(allUserIds);
+        const [emailMap, profileMap] = await Promise.all([
+          fetchUserEmails(userIdsArray, currentUserId, currentUserEmail),
+          fetchUserProfiles(supabase, userIdsArray),
+        ]);
+
+        for (const b of balances) {
+          const profile = b.user_id ? profileMap.get(b.user_id) : null;
+          if (b.user_id) {
+            const authEmail = emailMap.get(b.user_id);
+            if (authEmail) b.email = authEmail;
+          }
+          b.full_name = profile?.full_name || b.full_name || null;
+          b.avatar_url = profile?.avatar_url || b.avatar_url || null;
+        }
+        for (const b of overallBalances) {
+          const profile = b.user_id ? profileMap.get(b.user_id) : null;
+          if (b.user_id) {
+            const authEmail = emailMap.get(b.user_id);
+            if (authEmail) b.email = authEmail;
+          }
+          b.full_name = profile?.full_name || b.full_name || null;
+          b.avatar_url = profile?.avatar_url || b.avatar_url || null;
+        }
+      }
+
+      const response: BalancesResponse = {
+        group_balances: groupBalances,
+        overall_balances: overallBalances,
+      };
+
+      if (includeStats && ledger) {
+        response.group_stats = calculateGroupStatsFromLedger(
+          ledger,
+          currentUserId,
+          balances
+        );
+      }
+
+      return createSuccessResponse(response, 200, 0, req);
     }
 
     const { data: memberships } = await supabase
@@ -563,11 +649,7 @@ Deno.serve(async (req: Request) => {
     interface Membership {
       group_id: string;
     }
-    const groupIds = (memberships || []).map((m: Membership) => m.group_id);
-
-    const targetGroupIds = groupId 
-      ? (groupIds.includes(groupId) ? [groupId] : [])
-      : groupIds;
+    const targetGroupIds = (memberships || []).map((m: Membership) => m.group_id);
 
     if (targetGroupIds.length === 0) {
       return createSuccessResponse({
@@ -585,7 +667,7 @@ Deno.serve(async (req: Request) => {
 
     const balancePromises = targetGroupIds.map(async (gId: string) => {
       try {
-        const balances = await calculateGroupBalances(
+        const { balances } = await calculateGroupBalances(
           supabase,
           gId,
           currentUserId,
@@ -597,19 +679,18 @@ Deno.serve(async (req: Request) => {
           group_name: groupName,
           balances,
         };
-      } catch (error) {
+      } catch (_error) {
         return {
           group_id: gId,
           group_name: groupMap.get(gId) || 'Unknown Group',
-          balances: [],
+          balances: [] as Balance[],
         };
       }
     });
 
     const balanceResults = await Promise.allSettled(balancePromises);
     const groupBalances: GroupBalance[] = [];
-    
-    // Map<UserId, Map<Currency, Amount>>
+
     const overallBalanceMap = new Map<string, Map<string, number>>();
 
     for (const result of balanceResults) {
@@ -630,9 +711,8 @@ Deno.serve(async (req: Request) => {
 
     const overallBalances: Balance[] = [];
     for (const [userId, currencyMap] of overallBalanceMap.entries()) {
-      // Overall balances (across groups) should only return the requester's position
       if (userId !== currentUserId) continue;
-      
+
       for (const [currency, amount] of currencyMap.entries()) {
         const roundedAmount = Math.round(amount * 100) / 100;
         if (Math.abs(roundedAmount) > 0.01) {
@@ -646,7 +726,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const allUserIds = new Set<string>();
-    
+
     for (const gb of groupBalances) {
       for (const b of gb.balances) {
         allUserIds.add(b.user_id);
@@ -670,7 +750,6 @@ Deno.serve(async (req: Request) => {
             const authEmail = emailMap.get(b.user_id);
             if (authEmail) b.email = authEmail;
           }
-          // Only overwrite if profile has data (merging auth profile over participant data)
           b.full_name = profile?.full_name || b.full_name || null;
           b.avatar_url = profile?.avatar_url || b.avatar_url || null;
         }
@@ -690,16 +769,6 @@ Deno.serve(async (req: Request) => {
       group_balances: groupBalances,
       overall_balances: overallBalances,
     };
-
-    if (includeStats && groupId) {
-      const targetGroup = groupBalances.find((gb) => gb.group_id === groupId);
-      response.group_stats = await calculateGroupStats(
-        supabase,
-        groupId,
-        currentUserId,
-        targetGroup?.balances || []
-      );
-    }
 
     return createSuccessResponse(response, 200, 0, req);
   } catch (error: unknown) {

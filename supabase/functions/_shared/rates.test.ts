@@ -1,11 +1,15 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
   buildRatesPayload,
+  chooseMarketBookOutcome,
   isCacheFresh,
   mergeUsdRates,
   parseExchangeRateApiResponse,
   parseFrankfurterResponse,
+  raceWithDeadline,
   rowsToUsdRates,
+  STALE_REFRESH_DEADLINE_MS,
+  UPSTREAM_FETCH_TIMEOUT_MS,
   usdRatesToRows,
   validateGroupRateInput,
 } from "./rates.ts";
@@ -100,4 +104,60 @@ Deno.test("buildRatesPayload keeps group overrides next to the market book", () 
     updated_at: undefined,
   });
   assertEquals(payload.usd_rates.INR, 88.5);
+});
+
+Deno.test("chooseMarketBookOutcome prefers fresh refresh then stale cache", () => {
+  assertEquals(
+    chooseMarketBookOutcome({
+      hasCache: true,
+      cacheFresh: true,
+      freshAvailable: false,
+      refreshTimedOut: false,
+    }),
+    { kind: "fresh" },
+  );
+  assertEquals(
+    chooseMarketBookOutcome({
+      hasCache: true,
+      cacheFresh: false,
+      freshAvailable: true,
+      refreshTimedOut: false,
+    }),
+    { kind: "fresh" },
+  );
+  assertEquals(
+    chooseMarketBookOutcome({
+      hasCache: true,
+      cacheFresh: false,
+      freshAvailable: false,
+      refreshTimedOut: true,
+    }),
+    { kind: "stale" },
+  );
+  assertEquals(
+    chooseMarketBookOutcome({
+      hasCache: false,
+      cacheFresh: false,
+      freshAvailable: false,
+      refreshTimedOut: true,
+    }),
+    { kind: "empty" },
+  );
+  assertEquals(STALE_REFRESH_DEADLINE_MS < UPSTREAM_FETCH_TIMEOUT_MS, true);
+});
+
+Deno.test("raceWithDeadline returns the value before the deadline", async () => {
+  const result = await raceWithDeadline(
+    Promise.resolve("ok"),
+    50,
+  );
+  assertEquals(result, { timedOut: false, value: "ok" });
+});
+
+Deno.test("raceWithDeadline times out a slow refresh so stale cache can win", async () => {
+  const result = await raceWithDeadline(
+    new Promise<string>((resolve) => setTimeout(() => resolve("late"), 80)),
+    15,
+  );
+  assertEquals(result.timedOut, true);
 });

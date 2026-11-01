@@ -58,8 +58,6 @@ import {
   refreshNotificationReads,
   useNotifications,
 } from "./hooks/useNotifications";
-import { fetchActivityPage } from "./hooks/useActivity";
-import { activityQueryOptions } from "./hooks/activityQuery";
 import { fetchBalances } from "./hooks/useBalances";
 import {
   fetchInvitationsForEmail,
@@ -74,8 +72,6 @@ import {
 import { fetchGroupDetails, useGroupDetails, useGroups } from "./hooks/useGroups";
 import { useProfile } from "./hooks/useProfile";
 import {
-  fetchLatestGroupExpenseSplitAmong,
-  fetchLatestGroupTransactionCurrency,
   fetchTransactionsPage,
   getGroupFormDefaultCurrency,
   getGroupFormDefaultSplitAmong,
@@ -315,6 +311,10 @@ function AppContent() {
   const [selectedNotificationId, setSelectedNotificationId] = useState<string | null>(null);
   const [groupInitialListMode, setGroupInitialListMode] = useState<"transactions" | "activity">("transactions");
   const [highlightedTransactionId, setHighlightedTransactionId] = useState<number | null>(null);
+  /** Wall-clock start for group_details_ready (set at tap / deep-link intent). */
+  const [groupDetailsOpenStartedAtMs, setGroupDetailsOpenStartedAtMs] = useState<
+    number | null
+  >(null);
   const [desktopNotificationRoute, setDesktopNotificationRoute] = useState<"closed" | "list" | "detail">("closed");
   const [invitationsRefreshTrigger, setInvitationsRefreshTrigger] =
     useState<number>(0);
@@ -360,6 +360,9 @@ function AppContent() {
 
   const prefetchGroupData = React.useCallback(
     async (groupId: string) => {
+      // Critical path only: details + balances/stats + first ledger page.
+      // Defer activity, last-currency, and last-split-among so they do not
+      // contend with the balances edge function on open.
       await Promise.all([
         queryClientInstance.prefetchQuery({
           queryKey: queryKeys.group(groupId),
@@ -372,14 +375,6 @@ function AppContent() {
           initialPageParam: null as TransactionsCursor | null,
           getNextPageParam: (lastPage: TransactionsPageResponse) =>
             lastPage.has_more ? lastPage.next_cursor : null,
-        }),
-        queryClientInstance.prefetchQuery({
-          queryKey: queryKeys.lastGroupTransactionCurrency(groupId),
-          queryFn: () => fetchLatestGroupTransactionCurrency(groupId),
-        }),
-        queryClientInstance.prefetchQuery({
-          queryKey: queryKeys.lastGroupExpenseSplitAmong(groupId),
-          queryFn: () => fetchLatestGroupExpenseSplitAmong(groupId),
         }),
         queryClientInstance.prefetchQuery({
           // Must include stats: GroupDetails / GroupStats share this key and need
@@ -396,9 +391,6 @@ function AppContent() {
             return data;
           },
         }),
-        queryClientInstance.prefetchInfiniteQuery(
-          activityQueryOptions(groupId, fetchActivityPage)
-        ),
       ]);
     },
     [queryClientInstance]
@@ -486,6 +478,7 @@ function AppContent() {
       setStatsContext(null);
       setGroupInitialListMode(initialMode);
       setHighlightedTransactionId(initialMode === "transactions" ? transactionId : null);
+      setGroupDetailsOpenStartedAtMs(Date.now());
       setSelectedGroup(group);
       setCurrentRoute("group-details");
     } catch (err) {
@@ -528,6 +521,7 @@ function AppContent() {
         setStatsContext(null);
         setGroupInitialListMode(initialMode);
         setHighlightedTransactionId(initialMode === "transactions" ? transactionId : null);
+        setGroupDetailsOpenStartedAtMs(Date.now());
         setSelectedGroup(group);
         setCurrentRoute("group-details");
       },
@@ -1117,6 +1111,7 @@ function AppContent() {
   };
 
   const handleGroupPress = (group: Group) => {
+    setGroupDetailsOpenStartedAtMs(Date.now());
     prefetchGroupData(group.id).catch((err) =>
       logError(err, { context: "prefetchGroupData", groupId: group.id })
     );
@@ -1536,6 +1531,7 @@ function AppContent() {
           >
             <GroupDetailsScreen
               group={groupToDisplay}
+              openStartedAtMs={groupDetailsOpenStartedAtMs ?? undefined}
               refreshTrigger={invitationsRefreshTrigger}
               groupRefreshTrigger={groupRefreshTrigger}
               captureHardwareBack={!transactionFormVisible}
