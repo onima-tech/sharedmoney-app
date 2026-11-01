@@ -126,6 +126,7 @@ import {
   shouldShowGroupDetailsFab,
 } from "../utils/transactionsEmptyCopy";
 import { resolveGroupDetailsLoadingTreatment } from "../utils/groupDetailsLoadingTreatment";
+import { resolveGroupDetailsReadyTiming } from "../utils/groupDetailsReadyTelemetry";
 import {
   ARCHIVE_GROUP_CONFIRM_MESSAGE,
   REMOVE_FROM_LISTS_CONFIRM_MESSAGE,
@@ -167,6 +168,8 @@ interface GroupDetailsScreenProps {
   highlightedTransactionId?: number | null;
   onHighlightedTransactionShown?: (transactionId: number) => void;
   captureHardwareBack?: boolean;
+  /** Epoch ms when the user started opening this group (tap / deep link). */
+  openStartedAtMs?: number;
 }
 
 export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
@@ -186,6 +189,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   highlightedTransactionId = null,
   onHighlightedTransactionShown,
   captureHardwareBack = true,
+  openStartedAtMs,
 }) => {
   const [leaving, setLeaving] = useState<boolean>(false);
   const [membershipActionLoading, setMembershipActionLoading] = useState<boolean>(false);
@@ -340,24 +344,48 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     clearGroupRate,
   } = useCurrencyPreferences(initialGroup.id);
 
-  // Critical-path ready telemetry (details + balances/stats)
-  const groupOpenStartedAtRef = React.useRef(Date.now());
+  // Critical-path ready telemetry (details + balances/stats).
+  // Start time comes from navigation intent so warm-cache opens do not report
+  // duration_ms ≈ 0 from a mount-effect timer reset racing the ready effect.
+  const groupOpenStartedAtRef = React.useRef(openStartedAtMs ?? Date.now());
+  const trackedReadyGroupIdRef = React.useRef(initialGroup.id);
   const groupDetailsReadyLoggedRef = React.useRef(false);
-  useEffect(() => {
-    groupOpenStartedAtRef.current = Date.now();
+  const sawGroupLoadingRef = React.useRef(false);
+  const sawBalancesLoadingRef = React.useRef(false);
+  if (trackedReadyGroupIdRef.current !== initialGroup.id) {
+    trackedReadyGroupIdRef.current = initialGroup.id;
+    groupOpenStartedAtRef.current = openStartedAtMs ?? Date.now();
     groupDetailsReadyLoggedRef.current = false;
-  }, [initialGroup.id]);
+    sawGroupLoadingRef.current = false;
+    sawBalancesLoadingRef.current = false;
+  } else if (
+    openStartedAtMs != null &&
+    openStartedAtMs < groupOpenStartedAtRef.current
+  ) {
+    // Parent stamped the tap time after first paint; keep the earlier intent.
+    groupOpenStartedAtRef.current = openStartedAtMs;
+  }
+  if (groupLoading) sawGroupLoadingRef.current = true;
+  if (balancesLoading) sawBalancesLoadingRef.current = true;
   useEffect(() => {
     if (groupDetailsReadyLoggedRef.current) return;
     if (groupLoading || balancesLoading) return;
     if (groupError || balancesError) return;
     groupDetailsReadyLoggedRef.current = true;
+    const timing = resolveGroupDetailsReadyTiming({
+      openStartedAtMs: groupOpenStartedAtRef.current,
+      nowMs: Date.now(),
+      sawGroupLoading: sawGroupLoadingRef.current,
+      sawBalancesLoading: sawBalancesLoadingRef.current,
+    });
     captureIdentifiedAnalyticsEvent(
       session?.user?.id,
       ANALYTICS_EVENTS.GROUP_DETAILS_READY,
       {
         group_id: initialGroup.id,
-        duration_ms: Date.now() - groupOpenStartedAtRef.current,
+        duration_ms: timing.duration_ms,
+        from_cache: timing.from_cache,
+        cache_status: timing.cache_status,
       }
     );
   }, [
@@ -1349,13 +1377,18 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   };
 
   const currentUserId = session?.user?.id;
-  // isMember checks if the user exists in the group list at all (includes active and left)
-  const isMember =
-    group.members?.some((m) => m.user_id === currentUserId) ?? false;
-  
-  // isActiveMember checks if the user is currently active
-  const isActiveMember =
-    group.members?.some((m) => m.user_id === currentUserId && m.status === 'active') ?? false;
+  // Prefer members when loaded; fall back to list-row user_status so the first
+  // paint after a group tap does not wait on GET /groups/:id for chrome.
+  const isMember = group.members
+    ? group.members.some((m) => m.user_id === currentUserId)
+    : group.user_status === "active" ||
+      group.user_status === "left" ||
+      group.user_status === "invited";
+  const isActiveMember = group.members
+    ? group.members.some(
+        (m) => m.user_id === currentUserId && m.status === "active"
+      )
+    : group.user_status === "active";
 
   const settlingCounterpartyPresence = useMemo(() => {
     if (!settlingBalance) return undefined;
@@ -1425,14 +1458,16 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     !settlementsLoading &&
     transactions.length === 0 &&
     settlements.length === 0;
-  const listDataLoading = groupLoading || (
-    listMode === "transactions" ? txLoading || settlementsLoading : activityLoading
-  );
+  // List/dashboard readiness no longer waits on GET /groups/:id — the list row
+  // (initialGroup) already has name/settings, and membership falls back to
+  // user_status until members arrive.
+  const listDataLoading =
+    listMode === "transactions" ? txLoading || settlementsLoading : activityLoading;
   const listContentEmpty = listRows.length === 0;
   const fetchingNextPage =
     listMode === "transactions" ? txIsFetchingNextPage : activityFetchingNextPage;
   const loadingTreatment = resolveGroupDetailsLoadingTreatment({
-    balancesLoading: groupLoading || balancesLoading || groupStatsLoading,
+    balancesLoading: balancesLoading || groupStatsLoading,
     balancesError: !!balancesError,
     listDataLoading,
     listContentEmpty,

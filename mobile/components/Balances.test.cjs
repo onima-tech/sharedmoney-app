@@ -755,6 +755,38 @@ test("App prefetchGroupData fetches balances with include_stats for shared key",
     source,
     /queryKey:\s*queryKeys\.balances\(groupId\),[\s\S]{0,80}queryFn:\s*\(\)\s*=>\s*fetchBalances\(groupId\)/
   );
+  // Critical-path prefetch only — activity / last-currency must not contend on open.
+  const prefetchBlock = source.match(
+    /const prefetchGroupData = React\.useCallback\(\s*async \(groupId: string\) => \{[\s\S]*?\},\s*\[queryClientInstance\]\s*\)/
+  );
+  assert.ok(prefetchBlock, "prefetchGroupData block should exist");
+  assert.doesNotMatch(prefetchBlock[0], /activityQueryOptions|fetchActivityPage/);
+  assert.doesNotMatch(
+    prefetchBlock[0],
+    /fetchLatestGroupTransactionCurrency|fetchLatestGroupExpenseSplitAmong/
+  );
+});
+
+test("group details ready telemetry starts at navigation intent", () => {
+  const app = readFileSync(path.join(__dirname, "../App.tsx"), "utf8");
+  const screen = readFileSync(
+    path.join(__dirname, "../screens/GroupDetailsScreen.tsx"),
+    "utf8"
+  );
+  assert.match(app, /setGroupDetailsOpenStartedAtMs\(Date\.now\(\)\)/);
+  assert.match(app, /openStartedAtMs=\{groupDetailsOpenStartedAtMs/);
+  assert.match(screen, /resolveGroupDetailsReadyTiming/);
+  assert.match(screen, /from_cache: timing\.from_cache/);
+  assert.match(screen, /cache_status: timing\.cache_status/);
+  // Dashboard / list must not wait on GET /groups/:id when list row is present.
+  assert.match(
+    screen,
+    /balancesLoading:\s*balancesLoading \|\| groupStatsLoading/
+  );
+  assert.doesNotMatch(
+    screen,
+    /balancesLoading:\s*groupLoading \|\| balancesLoading/
+  );
 });
 
 test("useBalances refetches when includeStats cache lacks group_stats", () => {
