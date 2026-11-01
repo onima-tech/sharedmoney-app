@@ -6,7 +6,13 @@ import { Group, GroupWithMembers } from "../types";
 import { fetchWithAuth } from "../utils/api";
 import { getDefaultCurrency } from "../utils/currency";
 import { type RateBook, type RateSource } from "../utils/currencyMerge";
-import { logError } from "../utils/logger";
+import { log, logError } from "../utils/logger";
+import {
+  RATES_FETCH_TIMEOUT_MS,
+  readRatesDiskCache,
+  resolveRatesFetchResult,
+  writeRatesDiskCache,
+} from "../utils/ratesCache";
 import { shouldReportRatesFetchError } from "../utils/sentryTriagePolicy";
 import {
   groupSettingsFromGroup,
@@ -105,14 +111,39 @@ export function buildGroupRateBook(
 }
 
 export async function fetchRates(groupId?: string): Promise<RatesResponse | null> {
+  const diskEntry = await readRatesDiskCache(AsyncStorage, groupId);
   try {
     const path = groupId
       ? `/rates?group_id=${encodeURIComponent(groupId)}`
       : "/rates";
-    const response = await fetchWithAuth(path);
-    return await response.json();
+    const response = await fetchWithAuth(
+      path,
+      {},
+      "sign-out-local",
+      RATES_FETCH_TIMEOUT_MS,
+    );
+    const payload = (await response.json()) as RatesResponse;
+    const resolved = resolveRatesFetchResult(payload, diskEntry);
+    if (resolved.response && !resolved.fromDisk) {
+      await writeRatesDiskCache(AsyncStorage, resolved.response, groupId);
+    }
+    return resolved.response;
   } catch (error) {
-    if (!shouldReportRatesFetchError(error)) return null;
+    const resolved = resolveRatesFetchResult(null, diskEntry);
+    if (resolved.fromDisk && resolved.response) {
+      log("Using cached exchange rates after fetch failure", {
+        groupId,
+        cachedAt: diskEntry?.cachedAt,
+      }, "warn");
+      return resolved.response;
+    }
+    if (!shouldReportRatesFetchError(error)) {
+      log("Exchange rates fetch failed; using preview fallback", {
+        groupId,
+        message: error instanceof Error ? error.message : String(error),
+      }, "warn");
+      return null;
+    }
     logError(error instanceof Error ? error : new Error(String(error)), {
       context: "Fetch exchange rates",
       groupId,
