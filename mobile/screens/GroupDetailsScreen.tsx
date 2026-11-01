@@ -1458,7 +1458,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     !settlementsLoading &&
     transactions.length === 0 &&
     settlements.length === 0;
-  // List/dashboard readiness no longer waits on GET /groups/:id — the list row
+  // List/dashboard readiness no longer waits on GET /groups/:id: the list row
   // (initialGroup) already has name/settings, and membership falls back to
   // user_status until members arrive.
   const listDataLoading =
