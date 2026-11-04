@@ -6,7 +6,6 @@
 # The npm entries below exist to carry `ignore` rules (which also apply to
 # Dependabot security updates). `open-pull-requests-limit: 0` keeps routine
 # version-update PRs disabled, so behaviour is otherwise unchanged.
-# - vite major: vite 8 is incompatible with @vitejs/plugin-react 5.x (see #403).
 # - xcode major: pulled in via @expo/config-plugins; held until Expo moves.
 version: 2
 updates:
@@ -17,8 +16,6 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 0
     ignore:
-      - dependency-name: "vite"
-        update-types: ["version-update:semver-major"]
       - dependency-name: "xcode"
         update-types: ["version-update:semver-major"]
 
@@ -27,9 +24,6 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 0
-    ignore:
-      - dependency-name: "vite"
-        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "npm"
     directory: "/mobile"
