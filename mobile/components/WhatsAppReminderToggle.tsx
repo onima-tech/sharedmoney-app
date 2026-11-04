@@ -2,44 +2,53 @@ import React from "react";
 import { StyleSheet, View } from "react-native";
 import { Switch, Text, useTheme } from "react-native-paper";
 
-export const WHATSAPP_REMINDER_TITLE = "Monthly WhatsApp summary";
-export const WHATSAPP_REMINDER_HELPER =
-  "One message a month on WhatsApp with what you owe and what you are owed. Indian (+91) numbers only.";
-export const WHATSAPP_REMINDER_NEEDS_PHONE =
-  "Add your phone number to get a monthly summary on WhatsApp.";
+import {
+  resolveWhatsAppReminderToggleState,
+  WHATSAPP_REMINDER_TITLE,
+  type WhatsAppReminderToggleProps,
+} from "../utils/whatsappReminderToggle";
 
-interface Props {
-  hasPhone: boolean;
-  value: boolean;
-  disabled?: boolean;
-  onValueChange: (value: boolean) => void;
-}
+export type { WhatsAppReminderSaveState } from "../utils/whatsappReminderToggle";
 
-/** Owner-only opt-in for monthly WhatsApp balance reminders (#419). */
-export function WhatsAppReminderToggle({ hasPhone, value, disabled, onValueChange }: Props) {
+/** Owner-only opt-in for monthly WhatsApp balance reminders (#419). Saves on flip. */
+export function WhatsAppReminderToggle(props: WhatsAppReminderToggleProps) {
   const theme = useTheme();
+  const { enabled, helper, status, statusIsError } = resolveWhatsAppReminderToggleState(props);
   return (
-    <View style={styles.row}>
-      <View style={styles.copy}>
-        <Text variant="bodyLarge" style={{ color: theme.colors.onSurface }}>
-          {WHATSAPP_REMINDER_TITLE}
-        </Text>
-        <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-          {hasPhone ? WHATSAPP_REMINDER_HELPER : WHATSAPP_REMINDER_NEEDS_PHONE}
-        </Text>
+    <View style={styles.container}>
+      <View style={styles.row}>
+        <View style={styles.copy}>
+          <Text variant="bodyLarge" style={{ color: theme.colors.onSurface }}>
+            {WHATSAPP_REMINDER_TITLE}
+          </Text>
+          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+            {helper}
+          </Text>
+        </View>
+        <Switch
+          value={props.value && enabled}
+          disabled={props.disabled || !enabled || props.saveState === "saving"}
+          onValueChange={props.onValueChange}
+          testID="profile-whatsapp-reminders-switch"
+          accessibilityLabel={WHATSAPP_REMINDER_TITLE}
+        />
       </View>
-      <Switch
-        value={value && hasPhone}
-        disabled={disabled || !hasPhone}
-        onValueChange={onValueChange}
-        testID="profile-whatsapp-reminders-switch"
-        accessibilityLabel={WHATSAPP_REMINDER_TITLE}
-      />
+      {status ? (
+        <Text
+          variant="bodySmall"
+          accessibilityLiveRegion="polite"
+          testID="profile-whatsapp-reminders-status"
+          style={{ color: statusIsError ? theme.colors.error : theme.colors.primary, marginTop: 4 }}
+        >
+          {status}
+        </Text>
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
-  copy: { flex: 1, paddingRight: 12 },
+  container: { marginBottom: 16 },
+  row: { flexDirection: "row", alignItems: "center" },
+  copy: { flex: 1, paddingRight: 12, justifyContent: "center" },
 });

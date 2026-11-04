@@ -27,7 +27,10 @@ import {
 } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CountryCodePicker } from "../components/CountryCodePicker";
-import { WhatsAppReminderToggle } from "../components/WhatsAppReminderToggle";
+import {
+  WhatsAppReminderToggle,
+  type WhatsAppReminderSaveState,
+} from "../components/WhatsAppReminderToggle";
 import { useAuth } from "../contexts/AuthContext";
 import {
   ThemePreference,
@@ -86,6 +89,8 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
   const [phoneNumber, setPhoneNumber] = useState(""); // Phone number without country code
   const [upiId, setUpiId] = useState("");
   const [whatsappReminders, setWhatsappReminders] = useState(false);
+  const [whatsappSaveState, setWhatsappSaveState] =
+    useState<WhatsAppReminderSaveState>("idle");
   const [upiIdError, setUpiIdError] = useState("");
   const [selectedCountry, setSelectedCountry] = useState<CountryCode>(
     getDefaultCountry()
@@ -205,10 +210,23 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
       originalFullName !== currentFullName ||
       originalPhone !== currentPhone ||
       originalUpiId !== currentUpiId ||
-      (profile.whatsapp_reminders_opt_in === true) !== whatsappReminders ||
       countryChanged
     );
-  }, [profile, fullName, phone, upiId, selectedCountry, whatsappReminders]);
+  }, [profile, fullName, phone, upiId, selectedCountry]);
+
+  // Saves on flip (Design #454): optimistic switch, revert on failure.
+  const handleWhatsappRemindersChange = async (next: boolean) => {
+    const previous = whatsappReminders;
+    setWhatsappReminders(next);
+    setWhatsappSaveState("saving");
+    try {
+      await updateProfile({ whatsapp_reminders_opt_in: next });
+      setWhatsappSaveState("saved");
+    } catch {
+      setWhatsappReminders(previous);
+      setWhatsappSaveState("failed");
+    }
+  };
 
   const handleComplete = async () => {
     const formatError = getOptionalUpiIdFormatError(upiId);
@@ -228,7 +246,6 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
         profile_completed: true,
         preferred_currency: preferredCurrency,
         upi_id: normalizedUpi,
-        whatsapp_reminders_opt_in: whatsappReminders && !!phone.trim(),
       });
       if (normalizedUpi) {
         captureIdentifiedAnalyticsEvent(user?.id, ANALYTICS_EVENTS.UPI_ID_SAVED, {
@@ -441,9 +458,11 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
 
             <WhatsAppReminderToggle
               hasPhone={!!phoneNumber.trim()}
+              isIndiaNumber={selectedCountry.dialCode === "+91"}
               value={whatsappReminders}
+              saveState={whatsappSaveState}
               disabled={loading}
-              onValueChange={setWhatsappReminders}
+              onValueChange={handleWhatsappRemindersChange}
             />
 
             <TextInput
