@@ -29,6 +29,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify web lockfile (matches Vercel install)
+        # Vercel installs web/ standalone with `npm ci` against web/package-lock.json.
+        # Inside the repo npm resolves to the workspace root, so check a standalone copy.
+        run: |
+          dir="$RUNNER_TEMP/web-lockfile-check"
+          mkdir -p "$dir"
+          cp web/package.json web/package-lock.json "$dir/"
+          cd "$dir" && npm ci --ignore-scripts --no-audit --no-fund
+
       - name: Run Web Tests
         run: npm run test:web
 
