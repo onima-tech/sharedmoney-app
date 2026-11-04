@@ -16,6 +16,8 @@ export interface Profile {
   preferred_currency?: string | null;
   /** Optional UPI VPA; group co-members can read for settle Pay via UPI. */
   upi_id?: string | null;
+  /** Owner-only opt-in for the monthly WhatsApp summary (#419). */
+  whatsapp_reminders_opt_in?: boolean;
   created_at: string;
   updated_at: string;
 }

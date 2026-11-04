@@ -27,6 +27,7 @@ import {
 } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { CountryCodePicker } from "../components/CountryCodePicker";
+import { WhatsAppReminderToggle } from "../components/WhatsAppReminderToggle";
 import { useAuth } from "../contexts/AuthContext";
 import {
   ThemePreference,
@@ -84,6 +85,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
   const [phone, setPhone] = useState("");
   const [phoneNumber, setPhoneNumber] = useState(""); // Phone number without country code
   const [upiId, setUpiId] = useState("");
+  const [whatsappReminders, setWhatsappReminders] = useState(false);
   const [upiIdError, setUpiIdError] = useState("");
   const [selectedCountry, setSelectedCountry] = useState<CountryCode>(
     getDefaultCountry()
@@ -111,6 +113,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
     if (profile) {
       setFullName(profile.full_name || "");
       setUpiId(profile.upi_id || "");
+      setWhatsappReminders(profile.whatsapp_reminders_opt_in === true);
       setUpiIdError("");
       const phoneValue = profile.phone || "";
 
@@ -202,9 +205,10 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
       originalFullName !== currentFullName ||
       originalPhone !== currentPhone ||
       originalUpiId !== currentUpiId ||
+      (profile.whatsapp_reminders_opt_in === true) !== whatsappReminders ||
       countryChanged
     );
-  }, [profile, fullName, phone, upiId, selectedCountry]);
+  }, [profile, fullName, phone, upiId, selectedCountry, whatsappReminders]);
 
   const handleComplete = async () => {
     const formatError = getOptionalUpiIdFormatError(upiId);
@@ -224,6 +228,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
         profile_completed: true,
         preferred_currency: preferredCurrency,
         upi_id: normalizedUpi,
+        whatsapp_reminders_opt_in: whatsappReminders && !!phone.trim(),
       });
       if (normalizedUpi) {
         captureIdentifiedAnalyticsEvent(user?.id, ANALYTICS_EVENTS.UPI_ID_SAVED, {
@@ -433,6 +438,13 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
                 contentStyle={styles.phoneInputContent}
               />
             </View>
+
+            <WhatsAppReminderToggle
+              hasPhone={!!phoneNumber.trim()}
+              value={whatsappReminders}
+              disabled={loading}
+              onValueChange={setWhatsappReminders}
+            />
 
             <TextInput
               label="UPI ID"
