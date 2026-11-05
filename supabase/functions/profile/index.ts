@@ -28,7 +28,33 @@ interface Profile {
 }
 
 type ProfileUpdates = Partial<Pick<Profile, 'full_name' | 'avatar_url' | 'phone' | 'country_code' | 'profile_completed' | 'preferred_currency' | 'upi_id'>>;
-type ProfileUpdateRequest = ProfileUpdates & { accept_terms?: boolean };
+type ProfileUpdateRequest = ProfileUpdates & {
+  accept_terms?: boolean;
+  /** Owner-only, stored in whatsapp_reminder_prefs (not on profiles). */
+  whatsapp_reminders_opt_in?: boolean;
+};
+
+// deno-lint-ignore no-explicit-any
+type UserScopedClient = any;
+
+/** Read the caller's own WhatsApp reminder opt-in (RLS: owner only). */
+async function readReminderOptIn(supabase: UserScopedClient, userId: string): Promise<boolean> {
+  const { data, error } = await supabase
+    .from('whatsapp_reminder_prefs')
+    .select('opt_in')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) return false;
+  return data?.opt_in === true;
+}
+
+async function withReminderOptIn<T extends Record<string, unknown>>(
+  supabase: UserScopedClient,
+  userId: string,
+  profile: T,
+): Promise<T & { whatsapp_reminders_opt_in: boolean }> {
+  return { ...profile, whatsapp_reminders_opt_in: await readReminderOptIn(supabase, userId) };
+}
 
 interface ValidationResult {
   valid: boolean;
@@ -147,6 +173,13 @@ function validateProfileUpdates(updates: ProfileUpdateRequest): ValidationResult
     if (!currency.valid) {
       return { valid: false, error: currency.error || 'Invalid preferred currency' };
     }
+  }
+
+  if (
+    updates.whatsapp_reminders_opt_in !== undefined &&
+    typeof updates.whatsapp_reminders_opt_in !== 'boolean'
+  ) {
+    return { valid: false, error: 'whatsapp_reminders_opt_in must be a boolean' };
   }
 
   if (updates.upi_id !== undefined && updates.upi_id !== null) {
@@ -346,7 +379,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
         return handleError(error, 'fetching profile', req);
       }
 
-      return createSuccessResponse(profile, 200, 0, req);
+      return createSuccessResponse(await withReminderOptIn(supabase, user.id, profile), 200, 0, req);
     }
 
     if (method === 'PUT') {
@@ -417,6 +450,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
         Object.assign(sanitizedUpdates, buildTermsAcceptanceUpdate(true));
       }
 
+      if (typeof updates.whatsapp_reminders_opt_in === 'boolean') {
+        const now = new Date().toISOString();
+        const { error: prefsError } = await supabase
+          .from('whatsapp_reminder_prefs')
+          .upsert({
+            user_id: user.id,
+            opt_in: updates.whatsapp_reminders_opt_in,
+            opted_in_at: updates.whatsapp_reminders_opt_in ? now : null,
+            updated_at: now,
+          }, { onConflict: 'user_id' });
+        if (prefsError) {
+          return handleError(prefsError, 'updating WhatsApp reminder preference', req);
+        }
+      }
+
       const { data: updatedProfile, error } = await supabase
         .from('profiles')
         .update(sanitizedUpdates)
@@ -447,13 +495,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
             return handleError(insertError, 'creating profile', req);
           }
 
-          return createSuccessResponse(newProfile, 201, 0, req);
+          return createSuccessResponse(await withReminderOptIn(supabase, user.id, newProfile), 201, 0, req);
         }
 
         return handleError(error, 'updating profile', req);
       }
 
-      return createSuccessResponse(updatedProfile, 200, 0, req);
+      return createSuccessResponse(await withReminderOptIn(supabase, user.id, updatedProfile), 200, 0, req);
     }
 
     return createErrorResponse(405, 'Method not allowed', 'METHOD_NOT_ALLOWED', undefined, req);

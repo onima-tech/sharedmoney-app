@@ -120,7 +120,7 @@ jobs:
           echo ""
           
           # List of functions to check
-          FUNCTIONS=("groups" "transactions" "balances" "settlements" "invitations" "group-members" "activity" "moderation" "profile" "import-splitwise" "monthly-reminders" "notifications" "notification-worker" "rates" "whatsapp-dry-run" "whatsapp-otp")
+          FUNCTIONS=("groups" "transactions" "balances" "settlements" "invitations" "group-members" "activity" "moderation" "profile" "import-splitwise" "monthly-reminders" "notifications" "notification-worker" "rates" "whatsapp-dry-run" "whatsapp-otp" "whatsapp-monthly-reminders")
           
           echo "**Function Health Status:**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
