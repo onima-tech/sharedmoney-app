@@ -4,8 +4,10 @@ export const WHATSAPP_REMINDER_HELPER = "What you owe and are owed, once a month
 export const WHATSAPP_REMINDER_NEEDS_PHONE = "Add a phone number to turn this on.";
 export const WHATSAPP_REMINDER_NOT_INDIA = "Only for +91 numbers for now.";
 export const WHATSAPP_REMINDER_SAVING = "Saving...";
-export const WHATSAPP_REMINDER_SAVED_ON = "Saved. You will get a summary each month.";
+export const WHATSAPP_REMINDER_SAVED_ON = "Saved. You'll get it monthly.";
 export const WHATSAPP_REMINDER_SAVED_OFF = "Saved. Monthly summary is off.";
+/** How long the "Saved." confirmation stays visible before auto-hiding. */
+export const WHATSAPP_REMINDER_SAVED_HIDE_MS = 3000;
 export const WHATSAPP_REMINDER_SAVE_FAILED = "Could not save. Check your connection and try again.";
 
 export type WhatsAppReminderSaveState = "idle" | "saving" | "saved" | "failed";

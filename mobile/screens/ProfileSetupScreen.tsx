@@ -31,6 +31,7 @@ import {
   WhatsAppReminderToggle,
   type WhatsAppReminderSaveState,
 } from "../components/WhatsAppReminderToggle";
+import { WHATSAPP_REMINDER_SAVED_HIDE_MS } from "../utils/whatsappReminderToggle";
 import { useAuth } from "../contexts/AuthContext";
 import {
   ThemePreference,
@@ -213,6 +214,16 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
       countryChanged
     );
   }, [profile, fullName, phone, upiId, selectedCountry]);
+
+  // Auto-hide the "Saved." confirmation; clears on state change/unmount.
+  useEffect(() => {
+    if (whatsappSaveState !== "saved") return;
+    const timer = setTimeout(
+      () => setWhatsappSaveState("idle"),
+      WHATSAPP_REMINDER_SAVED_HIDE_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [whatsappSaveState]);
 
   // Saves on flip (Design #454): optimistic switch, revert on failure.
   const handleWhatsappRemindersChange = async (next: boolean) => {
