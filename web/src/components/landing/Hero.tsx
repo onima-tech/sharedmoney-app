@@ -1,3 +1,4 @@
+import { homeHeroLeadParts } from "../../homeHeroLead.mjs";
 import type { PlatformDestination } from "../../landingContent";
 import type { SeoPage } from "../../seoPages";
 import { PlatformCta } from "./PlatformCta";
@@ -21,7 +22,7 @@ export function Hero({
         <div className="hero-intro">
           <p className="kicker">{page.eyebrow}</p>
           <h1 className="hero-display">{page.heading}</h1>
-          <p className="hero-lead">{page.body}</p>
+          <HeroLead body={page.body} />
           <div className="hero-actions">
             <StoreBadges placement="hero" preferPlatform={primaryDestination.platform} />
             {webDestination ? (
@@ -37,4 +38,10 @@ export function Hero({
       </div>
     </section>
   );
+}
+
+function HeroLead({ body }: { body: string }) {
+  const parts = homeHeroLeadParts(body);
+  if (!parts) return <p className="hero-lead">{body}</p>;
+  return <p className="hero-lead">{parts.before}<br />{parts.after}</p>;
 }

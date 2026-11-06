@@ -90,6 +90,14 @@ for (const page of pages) {
       `${page.path}: SoftwareApplication JSON-LD must include iOS, Android, Web.`,
     );
     report(html.includes("no bank link"), `${page.path}: hero copy must include no bank link.`);
+    report(
+      html.includes("dinners. <br>No daily limits, no ads, no bank link."),
+      `${page.path}: homepage hero must break after dinners.`,
+    );
+    report(
+      !html.includes("dinners. No daily limits"),
+      `${page.path}: homepage hero must not leave No on the dinners line.`,
+    );
     report(html.includes('href="/faq">FAQ</a>'), `${page.path}: static footer must link FAQ to /faq.`);
     report(
       html.includes("No bank link") && html.includes(page.description),
