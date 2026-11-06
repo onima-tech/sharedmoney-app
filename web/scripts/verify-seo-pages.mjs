@@ -89,6 +89,12 @@ for (const page of pages) {
         html.includes('"operatingSystem": "iOS, Android, Web"'),
       `${page.path}: SoftwareApplication JSON-LD must include iOS, Android, Web.`,
     );
+    report(html.includes("no bank link"), `${page.path}: hero copy must include no bank link.`);
+    report(html.includes('href="/faq">FAQ</a>'), `${page.path}: static footer must link FAQ to /faq.`);
+    report(
+      html.includes("No bank link") && html.includes(page.description),
+      `${page.path}: meta description must keep the no bank link claim.`,
+    );
   }
 
   for (const relatedId of page.related) {
@@ -104,6 +110,10 @@ const sitemap = await readFile(path.join(distDir, "sitemap.xml"), "utf8");
 for (const page of pages) {
   report(sitemap.includes(`<loc>${pageUrl(page)}</loc><lastmod>${page.updated}</lastmod>`), `${page.path}: missing sitemap entry or lastmod.`);
 }
+report(
+  sitemap.includes(`<loc>${siteUrl}/faq</loc><lastmod>${homePage?.updated}</lastmod>`),
+  "/faq: missing sitemap entry or lastmod.",
+);
 
 const notFound = await readFile(path.join(distDir, "404.html"), "utf8");
 report(notFound.includes('name="robots" content="noindex,follow"'), "404 page must be noindex.");

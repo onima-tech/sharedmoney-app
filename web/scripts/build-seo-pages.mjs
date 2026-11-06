@@ -65,7 +65,7 @@ function fallbackMarkup(page) {
   const related = linkedPages(page).map((relatedPage) => `<li>${pageLink(relatedPage)}</li>`).join("");
 
   const lead = page.lead ? `<p>${escapeHtml(page.lead)}</p>` : "";
-  return `<main id="main-content"><article class="seo-source"><header><p>${escapeHtml(page.eyebrow)}</p><h1>${escapeHtml(page.heading)}</h1>${lead}<p>${escapeHtml(page.body)}</p><ul>${proofItems}</ul>${ctaMarkup(page)}</header>${sections}<section><h2>Common questions</h2>${faqs}</section><nav aria-label="Related SharedMoney pages"><h2>Explore SharedMoney</h2><ul>${related}</ul></nav><footer><a href="/privacy">Privacy Policy</a><a href="/delete-account">Delete Account</a><a href="mailto:support@sharedmoney.app">Contact support</a></footer></article></main>`;
+  return `<main id="main-content"><article class="seo-source"><header><p>${escapeHtml(page.eyebrow)}</p><h1>${escapeHtml(page.heading)}</h1>${lead}<p>${escapeHtml(page.body)}</p><ul>${proofItems}</ul>${ctaMarkup(page)}</header>${sections}<section><h2>Common questions</h2>${faqs}</section><nav aria-label="Related SharedMoney pages"><h2>Explore SharedMoney</h2><ul>${related}</ul></nav><footer><a href="/faq">FAQ</a><a href="/privacy">Privacy Policy</a><a href="/delete-account">Delete Account</a><a href="mailto:support@sharedmoney.app">Contact support</a></footer></article></main>`;
 }
 
 function structuredData(page) {
@@ -213,9 +213,12 @@ for (const page of pages) {
   await writeFile(path.join(targetDir, "index.html"), html);
 }
 
-const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages
-  .map((page) => `  <url><loc>${pageUrl(page.path)}</loc><lastmod>${page.updated}</lastmod></url>`)
-  .join("\n")}\n</urlset>\n`;
+const homeUpdated = pages.find((page) => page.path === "/")?.updated;
+const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${[
+  ...pages.map((page) => `  <url><loc>${pageUrl(page.path)}</loc><lastmod>${page.updated}</lastmod></url>`),
+  // /faq 308s to /#faq. Directories and crawlers still need the stable URL listed.
+  `  <url><loc>${siteUrl}/faq</loc><lastmod>${homeUpdated}</lastmod></url>`,
+].join("\n")}\n</urlset>\n`;
 
 await writeFile(path.join(distDir, "sitemap.xml"), sitemap);
 await writeFile(path.join(distDir, "404.html"), notFoundMarkup(template));
