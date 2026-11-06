@@ -29,6 +29,16 @@ describe("SEO route content", () => {
     expect(pageByPath.get("/")?.lead).toBeUndefined();
   });
 
+  it("includes no bank link in the homepage hero and meta description", () => {
+    const home = pageByPath.get("/");
+    expect(home?.body).toBe(
+      "Record who paid and who owes for trips, rent and dinners. No daily limits, no ads, no bank link.",
+    );
+    expect(home?.description).toContain("No bank link");
+    expect(home?.body.toLowerCase()).not.toContain("splitwise");
+    expect(home?.description.toLowerCase()).not.toContain("splitwise");
+  });
+
   it("keeps Splitwise proof cards free of bank-link duplication", () => {
     const proof = pageByPath.get("/splitwise-alternative")?.proof ?? [];
     expect(proof).toEqual([
