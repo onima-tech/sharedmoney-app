@@ -62,12 +62,12 @@ git push origin main
 
 ### Purpose
 
-Automatically deploys all Supabase Edge Functions to production whenever Edge Function code is pushed to the `main` branch.
+Automatically deploys all Supabase Edge Functions to production on any push to the `main` branch.
 
 ### How It Works
 
 1. **Triggers**: 
-   - Runs on pushes to `main` branch when files in `supabase/functions/` change
+   - Runs on any push to the `main` branch
    - Can be manually triggered via GitHub Actions UI
 2. **Setup**: Installs Supabase CLI and links to your project
 3. **Deploy**: Deploys all Edge Functions using `supabase functions deploy`
@@ -91,12 +91,12 @@ Automatically deploys all Supabase Edge Functions to production whenever Edge Fu
    - Click "New repository secret"
    - Add the following secrets:
      - `SUPABASE_ACCESS_TOKEN` - Your Supabase access token
-     - `SUPABASE_PROJECT_ID` - Your Supabase project reference ID
+     - `SUPABASE_PROJECT_REF` - Your Supabase project reference ID
 
 ### Usage
 
 **Automatic (Default)**:
-- Push changes to `supabase/functions/` directory
+- Push to the `main` branch (any path)
 - Merge PR to `main` branch
 - Functions are automatically deployed
 

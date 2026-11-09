@@ -2,14 +2,6 @@ name: Phuket unify snapshot
 
 on:
   workflow_dispatch:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - ".github/workflows/phuket-unify-snapshot.yml"
-      - "scripts/phuket_snapshot.py"
-      - "scripts/compare-unified-settlement.ts"
-      - "mobile/utils/currencyMerge.ts"
-      - "mobile/utils/debt.ts"
 
 permissions:
   contents: read
