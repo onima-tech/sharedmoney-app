@@ -11,6 +11,7 @@ import {
 } from '../_shared/upi.ts';
 import { fetchUserEmails } from '../_shared/user-email.ts';
 import { validateBodySize } from '../_shared/validation.ts';
+import { loadBatchProfiles } from './batch-profiles.ts';
 
 interface Profile {
   id: string;
@@ -195,47 +196,6 @@ function validateProfileUpdates(updates: ProfileUpdateRequest): ValidationResult
   return { valid: true };
 }
 
-/**
- * User IDs that share at least one active group with the viewer (plus self).
- * Used to gate upi_id on service-role batch reads (RLS is bypassed there).
- */
-async function sharedGroupUserIds(
-  serviceClient: ReturnType<typeof createClient>,
-  viewerId: string,
-  candidateIds: string[],
-): Promise<Set<string>> {
-  const allowed = new Set<string>([viewerId]);
-  const others = candidateIds.filter((id) => id && id !== viewerId);
-  if (others.length === 0) return allowed;
-
-  const { data: myMemberships, error: myError } = await serviceClient
-    .from('group_members')
-    .select('group_id')
-    .eq('user_id', viewerId)
-    .eq('status', 'active');
-
-  if (myError || !myMemberships?.length) {
-    return allowed;
-  }
-
-  const groupIds = myMemberships.map((row: { group_id: string }) => row.group_id);
-  const { data: coMembers, error: coError } = await serviceClient
-    .from('group_members')
-    .select('user_id')
-    .in('group_id', groupIds)
-    .in('user_id', others)
-    .eq('status', 'active');
-
-  if (coError) {
-    return allowed;
-  }
-
-  for (const row of coMembers || []) {
-    if (row.user_id) allowed.add(row.user_id);
-  }
-  return allowed;
-}
-
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === 'OPTIONS') {
     return createEmptyResponse(200, req);
@@ -277,8 +237,6 @@ Deno.serve(async (req: Request): Promise<Response> => {
             return createErrorResponse(400, 'Maximum 100 user_ids allowed per request', 'VALIDATION_ERROR', undefined, req);
           }
           
-          // Use service role client to bypass RLS for batch profile fetching
-          // This allows fetching profiles for any user, not just the authenticated user
           if (!SUPABASE_SERVICE_ROLE_KEY) {
             return createErrorResponse(
               500,
@@ -296,56 +254,18 @@ Deno.serve(async (req: Request): Promise<Response> => {
             },
           });
           
-          // Fetch profile fields using service role (bypasses RLS). upi_id is
-          // stripped below unless the viewer shares an active group membership.
-          const { data: profiles, error } = await serviceClient
-            .from('profiles')
-            .select('id, full_name, avatar_url, phone, country_code, profile_completed, upi_id, created_at, updated_at')
-            .in('id', userIds);
-          
-          if (error) {
-            return handleError(error, 'fetching profiles', req);
+          const batch = await loadBatchProfiles(
+            serviceClient,
+            user.id,
+            user.email || null,
+            userIds,
+            fetchUserEmails,
+          );
+          if (batch.error) {
+            return handleError(batch.error, 'fetching profiles', req);
           }
 
-          const upiAllowedIds = await sharedGroupUserIds(serviceClient, user.id, userIds);
-          
-          // Enrich profiles with email addresses
-          const emailMap = await fetchUserEmails(userIds, user.id, user.email || null);
-          
-          // Create a map of existing profiles
-          const profileMap = new Map((profiles || []).map(p => [p.id, p]));
-          
-          // Create enriched profiles for all requested user IDs
-          // Include users even if they don't have a profile record (they might have an email)
-          const enrichedProfiles = userIds.map(userId => {
-            const existingProfile = profileMap.get(userId);
-            const email = emailMap.get(userId) || null;
-            const canSeeUpi = upiAllowedIds.has(userId);
-            
-            if (existingProfile) {
-              return {
-                ...existingProfile,
-                upi_id: canSeeUpi ? (existingProfile.upi_id ?? null) : null,
-                email,
-              };
-            } else {
-              // Return minimal profile for users without profile records
-              return {
-                id: userId,
-                full_name: null,
-                avatar_url: null,
-                phone: null,
-                country_code: null,
-                profile_completed: false,
-                upi_id: null,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-                email,
-              };
-            }
-          });
-          
-          return createSuccessResponse(enrichedProfiles, 200, 0, req);
+          return createSuccessResponse(batch.profiles, 200, 0, req);
         } catch (parseError) {
           return createErrorResponse(400, 'Invalid user_ids format. Expected JSON array.', 'VALIDATION_ERROR', undefined, req);
         }
