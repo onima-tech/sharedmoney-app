@@ -203,5 +203,9 @@ export function getSocialAuthUserMessage(
       return failure.provider === "apple"
         ? "Apple sign-in couldn’t be completed. Please try again, or use email or Google sign-in."
         : "Google sign-in couldn’t be completed. Please try again.";
+    default: {
+      const _exhaustive: never = failure.kind;
+      return _exhaustive;
+    }
   }
 }

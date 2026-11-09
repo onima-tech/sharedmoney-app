@@ -5,7 +5,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { Group, GroupWithMembers } from "../types";
 import { fetchWithAuth } from "../utils/api";
 import { getDefaultCurrency } from "../utils/currency";
-import { type RateBook, type RateSource } from "../utils/currencyMerge";
+import { type RateSource } from "../utils/currencyMerge";
 import { log, logError } from "../utils/logger";
 import {
   RATES_FETCH_TIMEOUT_MS,
@@ -93,21 +93,6 @@ async function writePreferences(next: CurrencyPreferences): Promise<void> {
   memoryCache = next;
   listeners.forEach((listener) => listener(next));
   await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-}
-
-export function getGroupCurrencySettings(
-  prefs: CurrencyPreferences,
-  groupId: string | undefined
-): GroupCurrencySettings | null {
-  if (!groupId) return null;
-  return prefs.groups[groupId] || null;
-}
-
-export function buildGroupRateBook(
-  settings: GroupCurrencySettings | null | undefined,
-  market?: RateBook
-): RateBook {
-  return resolveRateBook(market, settings?.customRates || {});
 }
 
 export async function fetchRates(groupId?: string): Promise<RatesResponse | null> {

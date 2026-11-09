@@ -29,18 +29,7 @@ export function simplifyDebts(
 
   byCurrency.forEach((currencyBalances, currency) => {
     const sumOthers = currencyBalances.reduce((sum, b) => sum + b.amount, 0);
-    
-    // If currentUserId is provided, we can add a "You" node if implied.
-    // However, if the balances list is EXHAUSTIVE (contains all members including current user),
-    // we don't need to infer.
-    // In GroupDashboard, `balances` came from API which usually EXCLUDES current user?
-    // Let's check: `balancesData.group_balances[0].balances` usually excludes the viewer?
-    // Wait. If API returns "Balances relative to User", then User is 0?
-    // Actually `balances` in dashboard logic:
-    // `const myBalanceAmount = -sumOthers;`
-    // It assumes the LIST excludes self, and self is the remainder.
-    // I should preserve this behavior for now.
-    
+
     const allBalances = [...currencyBalances];
     if (currentUserId && Math.abs(sumOthers) > 0.01) {
        // Check if the current user is already in the list

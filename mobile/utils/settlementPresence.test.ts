@@ -6,7 +6,6 @@ import {
   settlementCounterpartyDisplayName,
   settlementCounterpartyShortName,
   settlementPresenceCaption,
-  settlementPresenceSuffix,
 } from "./settlementPresence.ts";
 
 Deno.test("resolveSettlementPresence: former wins", () => {
@@ -47,8 +46,6 @@ Deno.test("settlementPresenceCaption is secondary line for invited / no_account 
   assertEquals(settlementPresenceCaption("no_account"), "Not on SharedMoney");
   assertEquals(settlementPresenceCaption("app_member"), null);
   assertEquals(settlementPresenceCaption("former"), null);
-  // Deprecated alias still returns the caption (not an inline · suffix).
-  assertEquals(settlementPresenceSuffix("no_account"), "Not on SharedMoney");
 });
 
 Deno.test("remind audience: off-app for non-members", () => {

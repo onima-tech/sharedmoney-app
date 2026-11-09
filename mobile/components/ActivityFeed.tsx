@@ -2,8 +2,6 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import React from "react";
 import { Pressable, View } from "react-native";
 import {
-  ActivityIndicator,
-  Card,
   IconButton,
   Menu,
   Text,
@@ -16,10 +14,6 @@ import {
   formatActivityTime,
   getUserDisplayName,
 } from "../utils/activityDescriptions";
-import {
-  buildActivityFeedEntries,
-  type ActivityFeedEntry,
-} from "../utils/activityFeedRows";
 import { styles } from "./ActivityFeed.styles";
 
 export function ActivityDateHeader({
@@ -254,149 +248,3 @@ export function ActivityFeedEmptyState({ isFiltered }: { isFiltered?: boolean })
     </View>
   );
 }
-
-export function renderActivityFeedEntry(
-  entry: ActivityFeedEntry,
-  options: {
-    isFirstHeader?: boolean;
-    onReport?: (activity: ActivityItem) => void;
-    onBlock?: (activity: ActivityItem) => void;
-    onPressSettlement?: (settlement: Settlement, activity: ActivityItem) => void;
-  },
-) {
-  if (entry.kind === "header") {
-    return (
-      <ActivityDateHeader title={entry.title} isFirst={options.isFirstHeader} />
-    );
-  }
-  return (
-    <ActivityFeedRow
-      activity={entry.activity}
-      onReport={options.onReport}
-      onBlock={options.onBlock}
-      onPressSettlement={options.onPressSettlement}
-    />
-  );
-}
-
-interface ActivityFeedProps {
-  items: ActivityItem[];
-  loading: boolean;
-  hasNextPage?: boolean;
-  isFetchingNextPage?: boolean;
-  onLoadMore?: () => void;
-  isFiltered?: boolean;
-  onReport?: (activity: ActivityItem) => void;
-  onBlock?: (activity: ActivityItem) => void;
-  onPressSettlement?: (settlement: Settlement, activity: ActivityItem) => void;
-}
-
-/**
- * Compact activity host for non-virtualized contexts.
- * GroupDetails virtualizes via FlatList + ActivityFeedRow instead.
- */
-export const ActivityFeed: React.FC<ActivityFeedProps> = ({
-  items,
-  loading,
-  hasNextPage = false,
-  isFetchingNextPage = false,
-  onLoadMore,
-  isFiltered,
-  onReport,
-  onBlock,
-  onPressSettlement,
-}) => {
-  const theme = useTheme();
-
-  try {
-    if (loading) {
-      return (
-        <View>
-          <ActivityIndicator size="small" style={{ marginVertical: 16 }} />
-        </View>
-      );
-    }
-
-    if (items.length === 0) {
-      return (
-        <View>
-          <ActivityFeedEmptyState isFiltered={isFiltered} />
-        </View>
-      );
-    }
-
-    const entries = buildActivityFeedEntries(items);
-    let sawHeader = false;
-
-    return (
-      <View>
-        {entries.map((entry) => {
-          const isFirstHeader = entry.kind === "header" && !sawHeader;
-          if (entry.kind === "header") sawHeader = true;
-          return (
-            <View key={entry.key}>
-              {renderActivityFeedEntry(entry, {
-                isFirstHeader,
-                onReport,
-                onBlock,
-                onPressSettlement,
-              })}
-            </View>
-          );
-        })}
-        {(isFetchingNextPage || hasNextPage) && (
-          <View style={{ alignItems: "center", paddingVertical: 16 }}>
-            {isFetchingNextPage ? (
-              <ActivityIndicator size="small" />
-            ) : (
-              <Pressable
-                onPress={onLoadMore}
-                accessibilityRole="button"
-                accessibilityLabel="Load more activity"
-                style={({ pressed }) => ({
-                  paddingHorizontal: 16,
-                  paddingVertical: 10,
-                  borderRadius: 20,
-                  opacity: pressed ? 0.7 : 1,
-                  backgroundColor: theme.colors.surfaceVariant,
-                })}
-              >
-                <Text
-                  variant="labelMedium"
-                  style={{ color: theme.colors.onSurfaceVariant, fontWeight: "600" }}
-                >
-                  Load more activity
-                </Text>
-              </Pressable>
-            )}
-          </View>
-        )}
-      </View>
-    );
-  } catch (error) {
-    console.error("Error rendering ActivityFeed:", error);
-    return (
-      <View>
-        <Card style={styles.emptyStateCard} mode="outlined">
-          <Card.Content style={styles.emptyStateContent}>
-            <Text
-              variant="titleMedium"
-              style={[styles.emptyStateTitle, { color: theme.colors.error }]}
-            >
-              Error Loading Activity
-            </Text>
-            <Text
-              variant="bodyMedium"
-              style={[
-                styles.emptyStateMessage,
-                { color: theme.colors.onSurfaceVariant },
-              ]}
-            >
-              There was an error loading the activity feed. Please try again.
-            </Text>
-          </Card.Content>
-        </Card>
-      </View>
-    );
-  }
-};

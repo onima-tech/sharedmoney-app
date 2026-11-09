@@ -39,23 +39,6 @@ npm run version:major     # 1.0.0 → 2.0.0
 3. **Build Numbers**: Automatically incremented when you bump version
 4. **Package.json**: Version script also updates `package.json` for consistency
 
-## Version Display in App
-
-Use the `VersionDisplay` component to show version info:
-
-```typescript
-import { VersionDisplay } from './components/VersionDisplay';
-
-// Default display
-<VersionDisplay />
-
-// Compact display
-<VersionDisplay variant="compact" />
-
-// With build date
-<VersionDisplay showBuildDate />
-```
-
 ## CI/CD Automation
 
 ### Automatic Build Number Increment

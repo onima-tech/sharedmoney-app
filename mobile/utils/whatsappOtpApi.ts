@@ -27,16 +27,24 @@ export interface WhatsAppOtpVerifyResult {
   };
 }
 
-export type WhatsAppOtpErrorCode =
-  | "WHATSAPP_SEND_FAILED"
-  | "OTP_MISMATCH"
-  | "OTP_EXPIRED"
-  | "OTP_LOCKED"
-  | "OTP_INVALID"
-  | "RATE_LIMITED"
-  | "FEATURE_DISABLED"
-  | "VALIDATION_ERROR"
-  | string;
+const WHATSAPP_OTP_ERROR_CODES = [
+  "WHATSAPP_SEND_FAILED",
+  "OTP_MISMATCH",
+  "OTP_EXPIRED",
+  "OTP_LOCKED",
+  "OTP_INVALID",
+  "RATE_LIMITED",
+  "FEATURE_DISABLED",
+  "VALIDATION_ERROR",
+  "METHOD_NOT_ALLOWED",
+  "WHATSAPP_BUDGET_EXHAUSTED",
+] as const;
+
+export type WhatsAppOtpErrorCode = (typeof WHATSAPP_OTP_ERROR_CODES)[number];
+
+function isWhatsAppOtpErrorCode(code: string): code is WhatsAppOtpErrorCode {
+  return (WHATSAPP_OTP_ERROR_CODES as readonly string[]).includes(code);
+}
 
 export class WhatsAppOtpApiError extends Error {
   readonly code: WhatsAppOtpErrorCode;
@@ -109,9 +117,15 @@ async function postWhatsAppOtp(body: Record<string, unknown>): Promise<unknown> 
         "FEATURE_DISABLED",
       );
     }
-    const code = errBody.code || `HTTP_${response.status}`;
     const message =
       errBody.error || `Request failed (${response.status})`;
+    const code =
+      typeof errBody.code === "string" && isWhatsAppOtpErrorCode(errBody.code)
+        ? errBody.code
+        : null;
+    if (!code) {
+      throw new Error(message);
+    }
     throw new WhatsAppOtpApiError(
       message,
       code,

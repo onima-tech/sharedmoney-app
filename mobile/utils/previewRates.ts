@@ -62,7 +62,3 @@ export function createPreviewRateBook(
   }
   return book;
 }
-
-export function hasPreviewRate(currency: string): boolean {
-  return Boolean(PREVIEW_USD_RATES[currency.toUpperCase()]);
-}
