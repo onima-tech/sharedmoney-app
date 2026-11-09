@@ -1,5 +1,5 @@
 {
-  "_comment": "This file is superseded by app.config.js. The dynamic config in app.config.js takes precedence and supports both Expo Go and Development Builds.",
+  "_comment": "This file is superseded by app.config.js. The dynamic config in app.config.js takes precedence and supports both Expo Go and Development Builds. expo.version and ios.buildNumber are omitted on purpose; app.config.js sets them from version.json.",
   "expo": {
     "name": "SharedMoney",
     "slug": "share-money",
@@ -7,8 +7,6 @@
       "sharedmoney",
       "owewho"
     ],
-    "version": "2.31.5",
-    "_comment_version": "This is superseded by app.config.js which reads from version.json",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -19,7 +17,6 @@
         "sharedmoney",
         "owewho"
       ],
-      "buildNumber": "116",
       "usesAppleSignIn": true,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
