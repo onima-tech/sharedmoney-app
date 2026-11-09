@@ -29,15 +29,3 @@ export function parsePath(pathname: string): ParsedPath {
 
   return { resource, id, action };
 }
-
-/**
- * Extracts resource ID from pathname
- * Assumes format: /resource/:id or /resource/:id/:action
- */
-export function extractResourceId(pathname: string, resourceName: string): string | null {
-  const parsed = parsePath(pathname);
-  if (parsed.resource === resourceName && parsed.id) {
-    return parsed.id;
-  }
-  return null;
-}

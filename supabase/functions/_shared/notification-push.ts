@@ -52,15 +52,3 @@ export function composeNotificationPush(
     },
   };
 }
-
-export type ReceiptAge = "too-new" | "ready" | "expired";
-
-export function classifyReceiptAge(
-  createdAt: string,
-  now: Date = new Date(),
-): ReceiptAge {
-  const ageMs = now.getTime() - new Date(createdAt).getTime();
-  if (ageMs >= 24 * 60 * 60 * 1000) return "expired";
-  if (ageMs < 15 * 60 * 1000) return "too-new";
-  return "ready";
-}

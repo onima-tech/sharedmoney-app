@@ -17,11 +17,6 @@ export type PlatformDestination = {
   ariaLabel: string;
 };
 
-export type LandingSection = {
-  id: string;
-  label: string;
-};
-
 export type ScenarioMember = {
   initials: string;
   name: string;
@@ -88,12 +83,6 @@ export const primaryDestinationByDevice: Record<DeviceType, Platform> = {
   ios: "ios",
   desktop: "android",
 };
-
-export const sectionNav: LandingSection[] = [
-  { id: "product", label: "Product" },
-  { id: "how-it-works", label: "How it works" },
-  { id: "trust", label: "Trust" },
-];
 
 export const useCaseKeys: UseCaseKey[] = ["trips", "roommates", "dinner"];
 
