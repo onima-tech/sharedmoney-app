@@ -21,7 +21,7 @@ jobs:
 
       - uses: supabase/setup-cli@v1
         with:
-          version: latest
+          version: 3.1.0  # exact pin; same CLI as deploy-edge-functions.yml
 
       - uses: denoland/setup-deno@v2
         with:
@@ -31,13 +31,13 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
           SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
-          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           mkdir -p supabase/.temp
           printf '%s' "$SUPABASE_PROJECT_REF" > supabase/.temp/project-ref
           supabase --version
-          if ! supabase link --project-ref "$SUPABASE_PROJECT_REF" --yes -p "$SUPABASE_DB_PASSWORD"; then
-            echo "link with database password failed; continuing with project-ref for management queries"
+          # CLI 3 ignores a database password on link. The access token links the project.
+          if ! supabase link --project-ref "$SUPABASE_PROJECT_REF" --yes; then
+            echo "link failed; continuing with project-ref for management queries"
           fi
 
       - name: Snapshot Phuket group
