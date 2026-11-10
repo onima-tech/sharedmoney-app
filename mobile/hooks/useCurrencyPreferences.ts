@@ -211,11 +211,14 @@ export function useCurrencyPreferences(groupId?: string) {
 
   const unifyEnabled = groupFromServer?.unify_balances === true
     || (groupId ? prefs.groups[groupId]?.enabled === true : false);
+  // Former members can still open the group. Group rates require an active
+  // membership and otherwise 403 as "Not an active group member".
+  const viewerLeftGroup = groupFromServer?.user_status === "left";
 
   const groupRatesQuery = useQuery({
     queryKey: groupId ? queryKeys.groupRates(groupId) : queryKeys.marketRates,
     queryFn: () => fetchRates(groupId),
-    enabled: !!user?.id && !!groupId && unifyEnabled,
+    enabled: !!user?.id && !!groupId && unifyEnabled && !viewerLeftGroup,
     staleTime: 5 * 60 * 1000,
   });
 

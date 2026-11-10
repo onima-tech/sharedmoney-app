@@ -66,6 +66,14 @@ Deno.test("auth session transitions stay PII-free and stable", () => {
   assertEquals(resolveAuthSessionTransition(null, null), null);
 });
 
+Deno.test("rates fetch: former-member 403 is expected, not a Sentry error (REACT-NATIVE-22)", () => {
+  assertEquals(
+    shouldReportRatesFetchError(new Error("Not an active group member")),
+    false,
+  );
+  assertEquals(shouldReportRatesFetchError(new Error("Internal server error")), true);
+});
+
 Deno.test("rates fetch: missing session is expected noise, not a Sentry error (REACT-NATIVE-24)", () => {
   assertEquals(shouldReportRatesFetchError(new Error("Not authenticated")), false);
   assertEquals(shouldReportRatesFetchError("Not authenticated"), false);

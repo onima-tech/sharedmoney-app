@@ -1,4 +1,5 @@
 import { verifyAuth } from '../_shared/auth.ts';
+import { classifyDatabaseWriteError } from '../_shared/database-write-error.ts';
 import { createErrorResponse, handleError } from '../_shared/error-handler.ts';
 import { createEmptyResponse, createSuccessResponse } from '../_shared/response.ts';
 import { fetchUserEmails } from '../_shared/user-email.ts';
@@ -241,10 +242,26 @@ Deno.serve(async (req: Request) => {
         return createErrorResponse(403, 'Forbidden: Not a member of this group', 'PERMISSION_DENIED', undefined, req);
       }
 
-      // Ensure at least one of the participants is the creator (or creator is an owner)
-      // Actually, if you're in the group, you can record a settlement between any two participants
-      // but usually you record one where YOU are involved.
-      
+      // A former member keeps their participant row, so the check above passes.
+      // Insert RLS still requires group_members.status = 'active'. Failing that
+      // check inside the insert comes back as a PostgREST error object, which
+      // handleError used to turn into 500 "Internal server error" — the
+      // "Couldn't settle all groups" alert (Sentry REACT-NATIVE-22).
+      const { data: activeMembership, error: membershipError } = await supabase
+        .from('group_members')
+        .select('status')
+        .eq('group_id', settlementData.group_id)
+        .eq('user_id', currentUserId)
+        .eq('status', 'active')
+        .maybeSingle();
+
+      if (membershipError) {
+        return handleError(membershipError, 'checking settlement membership', req);
+      }
+      if (!activeMembership) {
+        return createErrorResponse(403, 'Not an active group member', 'PERMISSION_DENIED', undefined, req);
+      }
+
       const { data: settlement, error } = await supabase
         .from('settlements')
         .insert({
@@ -260,6 +277,16 @@ Deno.serve(async (req: Request) => {
         .single();
 
       if (error) {
+        const classified = classifyDatabaseWriteError(error);
+        if (classified) {
+          return createErrorResponse(
+            classified.status,
+            classified.error,
+            classified.code,
+            undefined,
+            req,
+          );
+        }
         return handleError(error, 'creating settlement', req);
       }
 

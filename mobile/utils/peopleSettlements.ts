@@ -380,14 +380,19 @@ export function groupContextsFromBalances(options: {
   const fallback = options.defaultCurrency || options.preferredCurrency || getDefaultCurrency();
   const groupById = new Map(options.groups.map((group) => [group.id, group]));
 
-  return options.groupBalances.map((groupBalance) => {
+  return options.groupBalances.flatMap((groupBalance) => {
     const group = groupById.get(groupBalance.group_id);
+    // Former members still have a participant row and a balance, but settlement
+    // inserts require group_members.status = 'active'. Including a left group
+    // in settle-all makes Postgres reject the row and the client report
+    // "Couldn't settle all groups" (Sentry REACT-NATIVE-22).
+    if (group?.user_status === "left") return [];
     const stored = options.prefsGroups[groupBalance.group_id];
     const settings = stored || groupSettingsFromGroup(group, fallback);
     const customRates = options.groupCustomRates?.[groupBalance.group_id]
       ?? settings.customRates
       ?? {};
-    return {
+    return [{
       groupId: groupBalance.group_id,
       groupName: groupBalance.group_name || group?.name || "Group",
       balances: groupBalance.balances,
@@ -395,7 +400,7 @@ export function groupContextsFromBalances(options: {
       settlementCurrency: settings.settlementCurrency || fallback,
       rateBook: resolveRateBook(options.marketBook, customRates),
       defaultCurrency: fallback,
-    };
+    }];
   });
 }
 
