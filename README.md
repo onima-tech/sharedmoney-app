@@ -176,8 +176,8 @@ SharedMoney/
 | `REMINDER_LOGO_URL` | Optional hosted logo URL for reminder emails; falls back to `${APP_URL}/icon.png` | `https://yourdomain.com/icon.png` |
 
 Generated invite, group, and reminder links should always use
-`https://sharedmoney.app/app`. `https://share-money.expo.app` is a legacy
-fallback redirect only, not a canonical link base.
+`https://sharedmoney.app/app`. The Expo redirect workflow and its artifact
+have been removed from this repo.
 
 **Supabase Vault secrets for monthly reminders:**
 

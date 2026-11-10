@@ -85,18 +85,15 @@ eas update --channel production --rollback --non-interactive
 Or republish the last good commit to the same channel. Users pick up the
 rollback on the launch after it downloads (second cold start).
 
-## Legacy web redirect
+## Web app
 
-`https://share-money.expo.app` is not the canonical web app. It hosts only a
-small path-preserving redirect artifact for old links. New user-facing app links
-must use `https://sharedmoney.app/app`.
+User-facing app links use `https://sharedmoney.app/app`. The Expo redirect
+workflow and the `mobile/expo-redirect` artifact have been removed from this
+repo. Export the web app into the Vercel-hosted marketing site with:
 
 ```bash
-npm run deploy:web:expo-redirect
+npm run export:web:sharedmoney
 ```
-
-The full web app is exported into the Vercel-hosted marketing site with
-`npm run export:web:sharedmoney`.
 
 ## Production builds (EAS Build)
 

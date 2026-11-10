@@ -15,10 +15,6 @@ const addMemberSource = readFileSync(
   join(repoRoot, "mobile", "screens", "AddMemberScreen.tsx"),
   "utf8"
 );
-const redirectHtml = readFileSync(
-  join(repoRoot, "mobile", "expo-redirect", "index.html"),
-  "utf8"
-);
 
 if (!inviteLinksSource.includes(`CANONICAL_WEB_APP_URL = "${canonicalAppUrl}"`)) {
   throw new Error(`Expected canonical app URL ${canonicalAppUrl}`);
@@ -38,10 +34,6 @@ if (inviteLinksSource.includes("window.location.origin")) {
 
 if (inviteLinksSource.includes(legacyExpoHost) || addMemberSource.includes(legacyExpoHost)) {
   throw new Error("Generated share links must not reference the legacy Expo host");
-}
-
-if (!redirectHtml.includes("window.location.replace(target.href)")) {
-  throw new Error("Legacy Expo redirect artifact must preserve the fast redirect");
 }
 
 console.log("Canonical link checks passed");

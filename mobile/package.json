@@ -28,8 +28,6 @@
     "verify:canonical-links": "node scripts/verify-canonical-links.mjs",
     "android:release": "eas submit --platform android --profile internal",
     "deploy:web": "npx expo export -p web && eas deploy --prod --non-interactive",
-    "export:web:expo-redirect": "node scripts/export-expo-redirect.mjs",
-    "deploy:web:expo-redirect": "npm run export:web:expo-redirect && eas deploy --prod --non-interactive --export-dir dist",
     "export:web:sharedmoney": "EXPO_NO_TELEMETRY=1 EXPO_PUBLIC_APP_URL=https://sharedmoney.app/app EXPO_PUBLIC_WEB_BASE_URL=/app npx expo export -p web --output-dir ../web/dist/app --max-workers 1"
   },
   "dependencies": {
