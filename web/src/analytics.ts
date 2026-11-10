@@ -1,3 +1,5 @@
+import type { CaptureResult } from "posthog-js";
+import { sanitizeAnalyticsRecord } from "../../shared/webVitalsPrivacy";
 import type { PlatformDestination } from "./landingContent";
 import { platformDestinations } from "./landingContent";
 import type { SeoPage, SeoTool } from "./seoPages";
@@ -11,6 +13,28 @@ import { detectDevice } from "./utils/deviceDetection";
  */
 
 type PostHogClient = typeof import("posthog-js").default;
+
+/**
+ * Standard `$pageview` and `$web_vitals` for the marketing site.
+ * `web_vitals: true` overrides PostHog remote config so capture does not
+ * depend on a project setting. Session replay and autocapture stay off.
+ */
+export const marketingPostHogClientOptions = {
+  autocapture: false,
+  capture_pageview: true,
+  capture_pageleave: false,
+  capture_performance: { web_vitals: true },
+  disable_session_recording: true,
+  person_profiles: "never",
+  persistence: "memory",
+} as const;
+
+export function sanitizeMarketingCapture(capture: CaptureResult | null): CaptureResult | null {
+  if (!capture) return capture;
+  const properties = sanitizeAnalyticsRecord(capture.properties);
+  if (!properties) return null;
+  return { ...capture, properties };
+}
 
 let analyticsRequested = false;
 let analyticsEnabled = false;
@@ -82,13 +106,9 @@ export function initializeAnalytics(): boolean {
   void import("posthog-js")
     .then(({ default: posthog }) => {
       posthog.init(key, {
+        ...marketingPostHogClientOptions,
         api_host: host || "https://us.i.posthog.com",
-        autocapture: false,
-        capture_pageview: false,
-        capture_pageleave: false,
-        disable_session_recording: true,
-        person_profiles: "never",
-        persistence: "memory",
+        before_send: sanitizeMarketingCapture,
       });
       posthogClient = posthog;
       analyticsEnabled = true;

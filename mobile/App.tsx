@@ -138,6 +138,7 @@ import {
   captureScreenView,
   initializePostHog,
 } from "./utils/posthogAnalytics";
+import { enableSpeedInsights } from "./utils/speedInsights";
 import { ANALYTICS_EVENTS } from "./utils/posthogEvents";
 import {
   createGroupsHomeLoadClock,
@@ -1788,6 +1789,8 @@ if (!process.env.EXPO_PUBLIC_SENTRY_DSN) {
 // Initialize PostHog once at startup. Guard against a missing project key so
 // local/dev builds stay quiet when SharedMoney Production analytics is unset.
 initializePostHog();
+// Browser web vitals for the /app export. Native builds no-op.
+enableSpeedInsights();
 
 function App() {
   const colorScheme = useColorScheme();
