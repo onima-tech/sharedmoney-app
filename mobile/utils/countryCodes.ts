@@ -69,9 +69,77 @@ export const getCountriesByDialCode = (dialCode: string): CountryCode[] => {
   return countryCodes.filter((country) => country.dialCode === dialCode);
 };
 
-// Get default country (US)
+/** Used when the device region is missing or not in the supported list. */
+const FALLBACK_COUNTRY = countryCodes[0]; // United States
+
+type DeviceLocale = {
+  regionCode?: string | null;
+  languageTag?: string | null;
+};
+
+type LocaleReader = () => DeviceLocale[];
+
+/**
+ * Soft-bind expo-localization so Deno unit tests can load this module
+ * without the native Expo package. Same pattern as currency.ts.
+ */
+let readLocales: LocaleReader | null = null;
+try {
+  // Soft native dependency — documented exception to top-level-only imports.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const Localization = require("expo-localization") as {
+    getLocales?: LocaleReader;
+  };
+  readLocales = Localization.getLocales ?? null;
+} catch {
+  readLocales = null;
+}
+
+function regionFromLanguageTag(
+  languageTag: string | null | undefined,
+): string | null {
+  if (!languageTag) return null;
+  const subtags = languageTag.replace(/_/g, "-").split("-");
+  // Skip the primary language subtag. Region is a later 2-letter subtag
+  // (en-IN, zh-Hans-CN). Script subtags are 4 letters and are ignored.
+  for (let index = subtags.length - 1; index >= 1; index -= 1) {
+    const subtag = subtags[index];
+    if (/^[A-Za-z]{2}$/.test(subtag)) return subtag;
+  }
+  return null;
+}
+
+/**
+ * Pick a supported phone country from device locale data.
+ * An explicit regionCode wins. Otherwise the region is read from languageTag.
+ * Unknown or missing regions fall back to the United States.
+ */
+export function countryFromDeviceLocales(
+  locales: ReadonlyArray<DeviceLocale> | null | undefined,
+): CountryCode {
+  const primary = locales?.[0];
+  const explicitRegion = primary?.regionCode?.trim();
+  if (explicitRegion) {
+    return getCountryByCode(explicitRegion) ?? FALLBACK_COUNTRY;
+  }
+  const tagRegion = regionFromLanguageTag(primary?.languageTag);
+  if (tagRegion) {
+    return getCountryByCode(tagRegion) ?? FALLBACK_COUNTRY;
+  }
+  return FALLBACK_COUNTRY;
+}
+
+/**
+ * Default phone country for an empty profile field.
+ * Reads the device region (expo-localization) and falls back to the US.
+ * Does not read or store the phone number.
+ */
 export const getDefaultCountry = (): CountryCode => {
-  return countryCodes[0]; // US
+  try {
+    return countryFromDeviceLocales(readLocales?.() ?? null);
+  } catch {
+    return FALLBACK_COUNTRY;
+  }
 };
 
 // Parse phone number to extract country code and number
@@ -95,11 +163,13 @@ export const parsePhoneNumber = (
       };
     }
   }
-  // Default to US if no country code found
+  // A stored number with no dial prefix stays on the US fallback.
+  // Using the device region here would change the formatted value in the
+  // editor and could rewrite the saved number the next time the profile is saved.
   return {
-    countryCode: getDefaultCountry().dialCode,
+    countryCode: FALLBACK_COUNTRY.dialCode,
     number: phoneNumber,
-    possibleCountries: [getDefaultCountry()],
+    possibleCountries: [FALLBACK_COUNTRY],
   };
 };
 

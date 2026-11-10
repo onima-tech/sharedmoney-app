@@ -169,6 +169,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
             setSelectedCountry(getDefaultCountry());
           }
         } else {
+          // Nothing saved yet: suggest the device region. Not written until Save.
           setSelectedCountry(getDefaultCountry());
         }
         setPhoneNumber("");
