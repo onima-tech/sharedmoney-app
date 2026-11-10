@@ -36,9 +36,10 @@ Automatically deploys all Supabase Edge Functions to production on any push to t
 1. **Triggers**: 
    - Runs on any push to the `main` branch
    - Can be manually triggered via GitHub Actions UI
-2. **Setup**: Installs Supabase CLI and links to your project
-3. **Deploy**: Deploys all Edge Functions using `supabase functions deploy`
-4. **Verify**: Lists deployed functions and provides deployment summary
+2. **Setup**: Installs Supabase CLI 3.1.0 (`supabase/setup-cli@v1`, exact pin) and links to your project
+3. **Migrations**: `supabase db push --yes --remote`
+4. **Deploy**: Deploys all Edge Functions using `supabase functions deploy --yes --remote="$SUPABASE_PROJECT_REF"`
+5. **Verify**: Lists deployed functions and provides deployment summary
 
 ### Setup Instructions
 

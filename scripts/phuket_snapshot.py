@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Anonymized Phuket group snapshot via the Supabase CLI.
 
-Prefers `supabase db query --linked`. Prints JSON with first-name labels only.
+Prefers `supabase db query --read-only --remote` (CLI 3). Prints JSON with first-name labels only.
 Never prints emails, full names, tokens, or connection strings.
 """
 from __future__ import annotations
@@ -85,18 +85,22 @@ def run_supabase(args: list[str], extra_env: dict[str, str] | None = None) -> su
 
 def cli_query(sql: str) -> list[dict[str, str]]:
     ensure_linked_ref()
-    linked = run_supabase(["db", "query", "--linked", "-o", "json", sql])
+    # SQL is the operand, so --remote stays after it. Bare --remote is the linked project.
+    # --read-only skips the hosted-mutation prompt, which CI cannot answer.
+    linked = run_supabase(["db", "query", "--read-only", "-o", "json", sql, "--remote"])
     if linked.returncode == 0:
         try:
             return parse_query_json(linked.stdout)
         except json.JSONDecodeError:
-            raise SystemExit(f"linked query returned non-JSON: {redact(linked.stdout)}") from None
+            raise SystemExit(f"remote query returned non-JSON: {redact(linked.stdout)}") from None
 
     db_url = os.environ.get("SUPABASE_DATABASE_URL", "").strip()
     if db_url:
         parsed = urlparse(db_url)
         if parsed.scheme.startswith("postgres"):
-            remote = run_supabase(["db", "query", "--db-url", db_url, "-o", "json", sql])
+            remote = run_supabase(
+                ["db", "query", "--read-only", "-o", "json", sql, f"--remote={db_url}"]
+            )
             if remote.returncode == 0:
                 try:
                     return parse_query_json(remote.stdout)
@@ -108,7 +112,7 @@ def cli_query(sql: str) -> list[dict[str, str]]:
     else:
         url_error = "no database url"
 
-    local = run_supabase(["db", "query", "--local", "-o", "json", sql])
+    local = run_supabase(["db", "query", "--read-only", "-o", "json", sql])
     if local.returncode == 0:
         try:
             return parse_query_json(local.stdout)
@@ -117,7 +121,7 @@ def cli_query(sql: str) -> list[dict[str, str]]:
 
     raise SystemExit(
         "supabase db query failed: "
-        f"linked={redact(linked.stderr or linked.stdout)}; "
+        f"remote={redact(linked.stderr or linked.stdout)}; "
         f"db-url={url_error}; "
         f"local={redact(local.stderr or local.stdout)}"
     )

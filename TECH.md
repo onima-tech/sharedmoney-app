@@ -387,10 +387,10 @@ Automatic Edge Functions deployment is configured via GitHub Actions. On every p
 The workflow (`.github/workflows/deploy-edge-functions.yml`) automatically:
 
 1. **Triggers** on any push to `main` branch (and via manual dispatch)
-2. **Installs** Supabase CLI
+2. **Installs** Supabase CLI 3.1.0 (exact pin in the workflow; not `latest`)
 3. **Links** to your Supabase project
-4. **Applies** pending database migrations using `supabase db push`
-5. **Deploys** all Edge Functions using `supabase functions deploy`
+4. **Applies** pending database migrations using `supabase db push --yes --remote`
+5. **Deploys** all Edge Functions using `supabase functions deploy --yes`
 6. **Reports** deployment status and summary
 
 **Manual Triggering:**
