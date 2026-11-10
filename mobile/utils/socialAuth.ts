@@ -52,6 +52,106 @@ export type SocialAuthTelemetryOptions = {
   retryCount?: number;
 };
 
+const SOCIAL_AUTH_FAILURE_KINDS: readonly SocialAuthFailureKind[] = [
+  "cancelled",
+  "browser_unavailable",
+  "play_services_unavailable",
+  "apple_unknown",
+  "provider_configuration",
+  "unexpected",
+];
+
+/**
+ * Expo WebBrowser rejects with this text when Android cannot resolve a Custom
+ * Tabs activity. Older SDKs used the shorter "No matching activity".
+ */
+export function isNoMatchingBrowserActivityMessage(message?: string): boolean {
+  const normalized = message?.toLowerCase() ?? "";
+  return (
+    normalized.includes("no matching browser activity") ||
+    normalized.includes("no matching activity")
+  );
+}
+
+/** Walk Error.message and Error.cause so wrapped Expo rejections still match. */
+export function readUnknownErrorMessage(error: unknown): string {
+  const parts: string[] = [];
+  const seen = new Set<unknown>();
+  let current: unknown = error;
+
+  while (current && !seen.has(current) && parts.length < 4) {
+    seen.add(current);
+    if (typeof current === "string") {
+      parts.push(current);
+      break;
+    }
+    if (typeof current !== "object") break;
+    if ("message" in current) {
+      const message = (current as { message?: unknown }).message;
+      if (typeof message === "string" && message.trim()) {
+        parts.push(message);
+      }
+    }
+    if ("cause" in current) {
+      current = (current as { cause?: unknown }).cause;
+      continue;
+    }
+    break;
+  }
+
+  return parts.join("\n");
+}
+
+export function isNoMatchingBrowserActivityError(error: unknown): boolean {
+  return isNoMatchingBrowserActivityMessage(readUnknownErrorMessage(error));
+}
+
+export type SocialAuthError = Error & {
+  socialAuthKind: SocialAuthFailureKind;
+};
+
+export function createSocialAuthError(failure: SocialAuthFailure): SocialAuthError {
+  const error = new Error(getSocialAuthUserMessage(failure)) as SocialAuthError;
+  error.socialAuthKind = failure.kind;
+  return error;
+}
+
+export function readSocialAuthKind(error: unknown): SocialAuthFailureKind | null {
+  if (!error || typeof error !== "object" || !("socialAuthKind" in error)) {
+    return null;
+  }
+  const kind = (error as { socialAuthKind?: unknown }).socialAuthKind;
+  if (
+    typeof kind === "string" &&
+    (SOCIAL_AUTH_FAILURE_KINDS as readonly string[]).includes(kind)
+  ) {
+    return kind as SocialAuthFailureKind;
+  }
+  return null;
+}
+
+export type BrowserUnavailableAlertAction = {
+  id: "whatsapp" | "email" | "dismiss";
+  text: string;
+  style?: "cancel";
+};
+
+/**
+ * Recovery choices when Google OAuth cannot open a browser.
+ * WhatsApp is included only when that sign-in method is enabled.
+ */
+export function getBrowserUnavailableAlertActions(
+  whatsappEnabled: boolean,
+): BrowserUnavailableAlertAction[] {
+  const actions: BrowserUnavailableAlertAction[] = [];
+  if (whatsappEnabled) {
+    actions.push({ id: "whatsapp", text: "Use WhatsApp" });
+  }
+  actions.push({ id: "email", text: "Use email" });
+  actions.push({ id: "dismiss", text: "Not now", style: "cancel" });
+  return actions;
+}
+
 /**
  * Strip credential-looking material before attaching provider messages to Sentry.
  * Keeps Apple/OS error text useful while avoiding identity tokens / nonces / JWTs.
@@ -99,7 +199,7 @@ export function classifySocialAuthFailure(
     kind = "cancelled";
   } else if (
     input.provider === "google" &&
-    message.includes("no matching browser activity")
+    isNoMatchingBrowserActivityMessage(input.message)
   ) {
     kind = "browser_unavailable";
   } else if (
@@ -192,7 +292,7 @@ export function getSocialAuthUserMessage(
     case "cancelled":
       return "Authentication was cancelled";
     case "browser_unavailable":
-      return "No supported browser is available. Install or enable Chrome (or another browser), then try Google sign-in again.";
+      return "No supported browser is available. Install or enable Chrome (or another browser), or use another sign-in method.";
     case "play_services_unavailable":
       return "Google Play Services is missing or outdated. Update Play Services, then try Google sign-in again.";
     case "apple_unknown":

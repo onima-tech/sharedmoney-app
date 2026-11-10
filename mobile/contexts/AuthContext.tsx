@@ -31,9 +31,11 @@ import {
   canUseNativeGoogleSignIn,
   signInWithNativeGoogle,
 } from "../utils/nativeGoogleAuth";
+import { openGoogleAuthSession } from "../utils/googleBrowserAuth";
 import {
   classifySocialAuthFailure,
-  getSocialAuthUserMessage,
+  createSocialAuthError,
+  readUnknownErrorMessage,
   shouldRetryAppleNativeAuth,
   type SocialAuthFailure,
   type SocialAuthProvider,
@@ -139,14 +141,12 @@ function classifyCaughtSocialAuthFailure(
     error && typeof error === "object"
       ? (error as { code?: unknown; message?: unknown })
       : null;
+  const message = readUnknownErrorMessage(error);
   return classifySocialAuthFailure({
     provider,
     stage,
     code: typeof candidate?.code === "string" ? candidate.code : undefined,
-    message:
-      typeof candidate?.message === "string"
-        ? candidate.message
-        : String(error ?? "Unknown social authentication error"),
+    message: message || "Unknown social authentication error",
     cancelled,
   });
 }
@@ -169,7 +169,7 @@ function handleSocialAuthFailure(
   if (failure.kind === "cancelled") return { error: null };
 
   recordSocialAuthFailure(failure, attemptId, { retryCount });
-  return { error: new Error(getSocialAuthUserMessage(failure)) };
+  return { error: createSocialAuthError(failure) };
 }
 function createAppleNonce(byteCount = 32): string {
   return Array.from(Crypto.getRandomBytes(byteCount))
@@ -592,11 +592,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         return { error: null };
       }
 
-      // Open browser for authentication (native platforms only)
+      // Open browser for authentication (native platforms only).
+      // Android retries once with an explicit Custom Tabs package when the
+      // default resolver finds no browser activity.
       stage = "browser_session";
-      const result = await WebBrowser.openAuthSessionAsync(
+      const result = await openGoogleAuthSession(
         data.url,
-        redirectTo
+        redirectTo,
+        {
+          openAuthSession: (url, redirectUrl, options) =>
+            WebBrowser.openAuthSessionAsync(url, redirectUrl, options),
+          listCustomTabsBrowsers: () =>
+            WebBrowser.getCustomTabsSupportingBrowsersAsync(),
+        },
+        Platform.OS,
       );
 
       if (result.type === "success") {

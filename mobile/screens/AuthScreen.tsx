@@ -12,6 +12,7 @@ import {
   TextInput as RNTextInput,
   useWindowDimensions,
   View,
+  type AlertButton,
 } from "react-native";
 import {
   Button,
@@ -47,6 +48,11 @@ import {
   sendWhatsAppOtp,
   WhatsAppOtpApiError,
 } from "../utils/whatsappOtpApi";
+import {
+  getBrowserUnavailableAlertActions,
+  readSocialAuthKind,
+  type BrowserUnavailableAlertAction,
+} from "../utils/socialAuth";
 import { isWhatsAppOtpLoginEnabled } from "../utils/whatsappOtpLogin";
 
 type AuthStep = "methods" | "email" | "phone" | "otp";
@@ -61,6 +67,33 @@ type WhatsAppOtpIssue =
 const PHONE_FIELD_HEIGHT = 56;
 const PHONE_FIELD_RADIUS = 4;
 const OTP_CODE_LENGTH = 6;
+
+function browserUnavailableAlertButtons(
+  whatsappEnabled: boolean,
+  handlers: { onWhatsApp: () => void; onEmail: () => void },
+): AlertButton[] {
+  return getBrowserUnavailableAlertActions(whatsappEnabled).map((action) =>
+    alertButtonForBrowserAction(action, handlers),
+  );
+}
+
+function alertButtonForBrowserAction(
+  action: BrowserUnavailableAlertAction,
+  handlers: { onWhatsApp: () => void; onEmail: () => void },
+): AlertButton {
+  switch (action.id) {
+    case "whatsapp":
+      return { text: action.text, onPress: handlers.onWhatsApp };
+    case "email":
+      return { text: action.text, onPress: handlers.onEmail };
+    case "dismiss":
+      return { text: action.text, style: "cancel" };
+    default: {
+      const _exhaustive: never = action.id;
+      return _exhaustive;
+    }
+  }
+}
 
 function otpIssueFromPreview(
   previewOtpIssue: WhatsAppOtpIssue | undefined,
@@ -414,6 +447,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     try {
       const { error } = await signInWithGoogle();
       if (error) {
+        if (readSocialAuthKind(error) === "browser_unavailable") {
+          Alert.alert(
+            "Google sign-in needs a browser",
+            error.message,
+            browserUnavailableAlertButtons(whatsappOtpEnabled, {
+              onWhatsApp: showPhoneForm,
+              onEmail: showEmailForm,
+            }),
+          );
+          return;
+        }
         Alert.alert("Google Sign In Failed", error.message || "Failed to sign in with Google", [
           { text: "OK", style: "default" },
         ]);
