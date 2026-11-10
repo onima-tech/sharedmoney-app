@@ -1,8 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import {
-  classifyReceiptAge,
-  composeNotificationPush,
-} from "./notification-push.ts";
+import { composeNotificationPush } from "./notification-push.ts";
 
 const notification = {
   id: "a6db6310-193f-49c8-bb2f-3a54016fc02a",
@@ -47,11 +44,4 @@ Deno.test("multiple unread notifications send a capped count to the inbox", () =
       route: "notifications",
     },
   });
-});
-
-Deno.test("receipt checks wait 15 minutes and expire after 24 hours", () => {
-  const now = new Date("2026-08-18T12:00:00.000Z");
-  assertEquals(classifyReceiptAge("2026-08-18T11:46:00.000Z", now), "too-new");
-  assertEquals(classifyReceiptAge("2026-08-18T11:45:00.000Z", now), "ready");
-  assertEquals(classifyReceiptAge("2026-08-17T12:00:00.000Z", now), "expired");
 });

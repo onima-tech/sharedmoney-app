@@ -20,8 +20,3 @@ export function detectDevice(): 'ios' | 'android' | 'desktop' {
   return 'desktop';
 }
 
-export function isMobile(): boolean {
-  const device = detectDevice();
-  return device === 'ios' || device === 'android';
-}
-

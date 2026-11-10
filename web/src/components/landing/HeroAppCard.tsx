@@ -1,7 +1,4 @@
-/**
- * HTML reconstruction of the Weekly Dinner Club group screen
- * (from web/public/group-story.png / Solid Pocket direction).
- */
+/** HTML reconstruction of the Weekly Dinner Club group screen. */
 export function HeroAppCard() {
   return (
     <div className="hero-plate" aria-hidden={false}>

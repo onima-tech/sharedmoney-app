@@ -18,9 +18,8 @@
 
 ### Key Files:
 - `src/App.tsx` - Main landing page component
-- `src/components/` - Landing page components (FAQ, TrustBadges, etc.)
+- `src/components/` - Landing page components (FAQ, Hero, TrustSection, and the rest of the marketing page)
 - `src/contexts/ThemeContext.tsx` - Dark mode for landing page
-- `src/hooks/useScrollAnimation.ts` - Scroll animations for landing page
 
 ### When making changes:
 - Remember this is a marketing site, not the app itself
