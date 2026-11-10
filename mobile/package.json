@@ -39,6 +39,7 @@
     "@sentry/react-native": "~7.11.0",
     "@supabase/supabase-js": "^2.39.0",
     "@tanstack/react-query": "^5.90.12",
+    "@vercel/speed-insights": "^2.1.0",
     "date-fns": "^4.1.0",
     "expo": "~57.0.26",
     "expo-apple-authentication": "~57.0.2",
