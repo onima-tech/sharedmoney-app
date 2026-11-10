@@ -2,7 +2,11 @@ import { assertEquals } from "jsr:@std/assert@1";
 import {
   buildSocialAuthTelemetry,
   classifySocialAuthFailure,
+  createSocialAuthError,
+  getBrowserUnavailableAlertActions,
   getSocialAuthUserMessage,
+  isNoMatchingBrowserActivityError,
+  readSocialAuthKind,
   sanitizeSocialAuthErrorMessage,
   shouldRetryAppleNativeAuth,
 } from "./socialAuth.ts";
@@ -76,14 +80,47 @@ Deno.test("exact Android browser resolution failure is stable", () => {
   const failure = classifySocialAuthFailure({
     provider: "google",
     stage: "browser_session",
-    message: "No matching browser activity found to handle intent",
+    message: "No matching browser activity found",
   });
 
   assertEquals(failure.kind, "browser_unavailable");
   assertEquals(failure.group, "auth.google.browser_unavailable");
   assertEquals(
     getSocialAuthUserMessage(failure),
-    "No supported browser is available. Install or enable Chrome (or another browser), then try Google sign-in again.",
+    "No supported browser is available. Install or enable Chrome (or another browser), or use another sign-in method.",
+  );
+
+  const wrapped = new Error(
+    "Call to function 'ExpoWebBrowser.openBrowserAsync' has been rejected.",
+  );
+  wrapped.cause = new Error("No matching activity!");
+  assertEquals(isNoMatchingBrowserActivityError(wrapped), true);
+  assertEquals(
+    classifySocialAuthFailure({
+      provider: "google",
+      stage: "browser_session",
+      message: "No matching activity!",
+    }).kind,
+    "browser_unavailable",
+  );
+});
+
+Deno.test("browser-unavailable recovery offers email and optional WhatsApp", () => {
+  const failure = classifySocialAuthFailure({
+    provider: "google",
+    stage: "browser_session",
+    message: "No matching browser activity found",
+  });
+  const error = createSocialAuthError(failure);
+
+  assertEquals(readSocialAuthKind(error), "browser_unavailable");
+  assertEquals(
+    getBrowserUnavailableAlertActions(false).map((action) => action.id),
+    ["email", "dismiss"],
+  );
+  assertEquals(
+    getBrowserUnavailableAlertActions(true).map((action) => action.text),
+    ["Use WhatsApp", "Use email", "Not now"],
   );
 });
 
