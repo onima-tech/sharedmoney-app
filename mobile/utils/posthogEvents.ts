@@ -26,7 +26,8 @@
  * `group_list_scroll` (sampled FlatList perf), `group_list_page_loaded`,
  * `group_details_ready` (open latency; props: group_id, duration_ms,
  *   from_cache, cache_status hit|miss|partial),
- * `groups_home_loaded` (home list ready; props: duration_ms, group_count),
+ * `groups_home_loaded` (home list rendered; props: duration_ms, group_count,
+ *   from_cache; duration_ms is visit start → list commit),
  * `upi_pay_tapped` (settle Pay via UPI; never include VPA),
  * `upi_id_saved` (profile UPI ID saved; never include VPA),
  * `review_prompt_requested` (native in-app review API invoked).

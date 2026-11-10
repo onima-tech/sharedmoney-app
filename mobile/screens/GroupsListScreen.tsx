@@ -33,6 +33,7 @@ import {
 import { isTransactionNotificationsEnabled } from "../utils/featureFlags";
 import { shouldShowNotificationPrimer } from "../utils/notificationPermission";
 import { logError } from "../utils/logger";
+import { resolveGroupsHomeLoadedTiming } from "../utils/groupsHomeLoadedTelemetry";
 import { captureIdentifiedAnalyticsEvent } from "../utils/posthogAnalytics";
 import { ANALYTICS_EVENTS } from "../utils/posthogEvents";
 import { getSeenGroupIds, markGroupSeen } from "../utils/seenGroups";
@@ -59,6 +60,10 @@ interface GroupsListScreenProps {
   onRefetchReady?: (refetch: () => Promise<any>) => void;
   refetchTrigger?: number; // Added to trigger refetch from parent
   onNotificationsPress: () => void;
+  /** When this home visit began (app open, sign-in, terms, or return). */
+  homeLoadStartedAtMs: number;
+  /** Groups query was in the empty loading state during this visit. */
+  homeSawInitialLoading: boolean;
 }
 
 export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
@@ -67,6 +72,8 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
   onRefetchReady,
   refetchTrigger,
   onNotificationsPress,
+  homeLoadStartedAtMs,
+  homeSawInitialLoading,
 }) => {
   const [showCreateGroup, setShowCreateGroup] = useState<boolean>(false);
   const [showSplitBill, setShowSplitBill] = useState(false);
@@ -104,26 +111,37 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
   // Deferred all-balances: do not paint "Even" until the query has resolved.
   const balancesReady = balancesEnabled && !balancesLoading;
 
-  const homeLoadedLoggedRef = React.useRef(false);
-  const homeStartedAtRef = React.useRef(Date.now());
+  // Start time is the visit stamp from App, not Date.now() in this effect.
+  // Resetting it here raced the ready effect and logged duration_ms 0 on cache.
+  const homeLoadedForStartRef = React.useRef<number | null>(null);
   useEffect(() => {
-    homeStartedAtRef.current = Date.now();
-    homeLoadedLoggedRef.current = false;
-  }, [user?.id]);
-  useEffect(() => {
-    if (homeLoadedLoggedRef.current) return;
+    if (homeLoadedForStartRef.current === homeLoadStartedAtMs) return;
+    if (!user?.id) return;
     if (loading && groups.length === 0) return;
     if (error) return;
-    homeLoadedLoggedRef.current = true;
+    homeLoadedForStartRef.current = homeLoadStartedAtMs;
+    const timing = resolveGroupsHomeLoadedTiming({
+      startedAtMs: homeLoadStartedAtMs,
+      renderedAtMs: Date.now(),
+      sawInitialLoading: homeSawInitialLoading,
+    });
     captureIdentifiedAnalyticsEvent(
-      user?.id,
+      user.id,
       ANALYTICS_EVENTS.GROUPS_HOME_LOADED,
       {
-        duration_ms: Date.now() - homeStartedAtRef.current,
+        duration_ms: timing.duration_ms,
         group_count: groups.length,
+        from_cache: timing.from_cache,
       }
     );
-  }, [loading, groups.length, error, user?.id]);
+  }, [
+    homeLoadStartedAtMs,
+    homeSawInitialLoading,
+    loading,
+    groups.length,
+    error,
+    user?.id,
+  ]);
   // Load which groups the user has already opened (for the NEW badge).
   // First run baselines all current groups so existing members see no badges
   // (an empty list stores an empty baseline, so a user's first joined group

@@ -140,6 +140,10 @@ import {
 } from "./utils/posthogAnalytics";
 import { ANALYTICS_EVENTS } from "./utils/posthogEvents";
 import {
+  createGroupsHomeLoadClock,
+  updateGroupsHomeLoadClock,
+} from "./utils/groupsHomeLoadedTelemetry";
+import {
   getSentryRuntimeTags,
   isSentryDiagnosticUrl,
 } from "./utils/sentryDiagnostics";
@@ -292,6 +296,26 @@ function AppContent() {
   const [currentRoute, setCurrentRoute] = useState<string>("groups");
   /** Defer global /balances until groups list can paint first. */
   const { data: homeGroups, isLoading: homeGroupsLoading } = useGroups();
+  // Stamp groups_home_loaded when the wait begins. The list screen often
+  // mounts with a warm cache; stamping Date.now() in its ready effect logged 0.
+  const homeLoadClockRef = React.useRef(
+    createGroupsHomeLoadClock(Date.now(), currentRoute),
+  );
+  const sawHomeInitialLoadingRef = React.useRef(false);
+  const nextHomeLoadClock = updateGroupsHomeLoadClock(homeLoadClockRef.current, {
+    nowMs: Date.now(),
+    userId: session?.user?.id ?? null,
+    authLoading: loading,
+    route: currentRoute,
+    termsBlocking: !!profile && needsTermsAcceptance(profile),
+  });
+  if (nextHomeLoadClock.startedAtMs !== homeLoadClockRef.current.startedAtMs) {
+    sawHomeInitialLoadingRef.current = false;
+  }
+  homeLoadClockRef.current = nextHomeLoadClock;
+  if (homeGroupsLoading && homeGroups.length === 0) {
+    sawHomeInitialLoadingRef.current = true;
+  }
   const [homeBalancesEnabled, setHomeBalancesEnabled] = useState(false);
   useEffect(() => {
     if (!session?.user?.id) {
@@ -1641,6 +1665,8 @@ function AppContent() {
         }}
         refetchTrigger={groupRefreshTrigger}
         onNotificationsPress={openNotifications}
+        homeLoadStartedAtMs={homeLoadClockRef.current.startedAtMs}
+        homeSawInitialLoading={sawHomeInitialLoadingRef.current}
       />
       <InAppBanner notice={banner} onDismiss={dismissBanner} />
       {desktopNotificationPanel}
