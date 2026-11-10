@@ -1,29 +1,11 @@
-# ShareMoney Landing Page
+# SharedMoney web
 
-## Important Context
+`web/` is the public site, not the Expo app in `mobile/`.
 
-**This `web/` folder is a LANDING PAGE ONLY** - it is NOT the full ShareMoney web application.
+It includes:
 
-### What this is:
-- A marketing/onboarding landing page
-- Built with React + TypeScript + Vite
-- Serves as the entry point for users to learn about ShareMoney
-- Provides download links for iOS/Android apps
-- Links to the web beta application (hosted elsewhere)
+- the marketing homepage
+- SEO pages for expense tracking and calculators
+- guest bill pages at `/split`
 
-### What this is NOT:
-- The full ShareMoney web application
-- The production web app
-- The main application codebase
-
-### Key Files:
-- `src/App.tsx` - Main landing page component
-- `src/components/` - Landing page components (FAQ, Hero, TrustSection, and the rest of the marketing page)
-- `src/contexts/ThemeContext.tsx` - Dark mode for landing page
-
-### When making changes:
-- Remember this is a marketing site, not the app itself
-- Focus on conversion (getting users to download apps or try web beta)
-- Keep it simple and focused on onboarding
-- The actual ShareMoney application code is in the `mobile/` folder or hosted separately
-
+`src/App.tsx` routes those surfaces. Production rewrites in `vercel.json` serve `/privacy`, `/terms`, `/delete-account`, and `/support` from `public/`.

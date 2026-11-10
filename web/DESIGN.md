@@ -22,7 +22,7 @@ This document is the canonical reference for the landing-page redesign.
 - Desktop visitors: Android is primary.
 - Secondary actions: remaining two destinations (`Open web app`, other platform action).
 - Hero store row: Google Play badge + App Store text link (`Download on the App Store` → `https://apps.apple.com/app/id6755923591`).
-- CTA event: `landing_cta_click` with `{ platform, placement, device }`.
+- CTA event: `seo cta clicked` with `{ platform, placement, device, page_path }`.
 
 ## Visual System
 - Identity: `Electric Pocket`, a vivid action-blue launcher tile with a white wallet
