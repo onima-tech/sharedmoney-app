@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(scriptDir, "..", "..");
 const canonicalAppUrl = "https://sharedmoney.app/app";
+const legacyExpoHost = "share-money.expo.app";
 
 const inviteLinksSource = readFileSync(
   join(repoRoot, "mobile", "utils", "inviteLinks.ts"),
@@ -29,6 +30,10 @@ if (!inviteLinksSource.includes("getGroupLinkUrl(groupId: string)")) {
 
 if (inviteLinksSource.includes("window.location.origin")) {
   throw new Error("Generated share links must not fall back to the current host");
+}
+
+if (inviteLinksSource.includes(legacyExpoHost) || addMemberSource.includes(legacyExpoHost)) {
+  throw new Error("Generated share links must not reference the legacy Expo host");
 }
 
 console.log("Canonical link checks passed");

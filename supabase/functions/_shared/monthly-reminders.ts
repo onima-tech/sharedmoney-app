@@ -138,7 +138,21 @@ function escapeHtml(value: string): string {
     .replaceAll("'", '&#039;');
 }
 
+const LEGACY_EXPO_APP_HOST = 'share-money.expo.app';
+
 function baseUrl(value: string): string {
+  if (value.includes(LEGACY_EXPO_APP_HOST)) {
+    throw new Error(
+      'APP_URL must use https://sharedmoney.app/app, not the legacy Expo redirect host',
+    );
+  }
+
+  try {
+    new URL(value);
+  } catch {
+    // Preserve the prior behavior for non-URL values passed by local/dev callers.
+  }
+
   return value.replace(/\/$/, '');
 }
 

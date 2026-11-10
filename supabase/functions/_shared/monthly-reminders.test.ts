@@ -13,6 +13,19 @@ function assertEquals(actual: unknown, expected: unknown) {
   }
 }
 
+function assertThrows(fn: () => unknown, expectedMessage: string) {
+  try {
+    fn();
+  } catch (err) {
+    if (err instanceof Error && err.message.includes(expectedMessage)) {
+      return;
+    }
+    throw err;
+  }
+
+  throw new Error(`Expected function to throw "${expectedMessage}"`);
+}
+
 const participants = [
   {
     id: 'alice-participant',
@@ -297,6 +310,33 @@ Deno.test('aggregateMonthlyReminderEmails falls back to app icon for logo', () =
   });
 
   assertEquals(emails[0].html.includes('src="https://app.example.com/icon.png"'), true);
+});
+
+Deno.test('aggregateMonthlyReminderEmails rejects legacy Expo app URLs', () => {
+  assertThrows(
+    () =>
+      aggregateMonthlyReminderEmails({
+        periodKey: '2026-08',
+        appUrl: 'https://share-money.expo.app',
+        edges: [
+          {
+            group_id: 'group-1',
+            group_name: 'Trip',
+            from_participant_id: 'alice-participant',
+            from_user_id: 'alice-user',
+            from_email: 'alice@example.com',
+            from_name: 'Alice',
+            to_participant_id: 'bob-participant',
+            to_user_id: 'bob-user',
+            to_email: 'bob@example.com',
+            to_name: 'Bob',
+            amount: 12.5,
+            currency: 'USD',
+          },
+        ],
+      }),
+    'legacy Expo redirect host',
+  );
 });
 
 Deno.test('getDeliveryReservationMode skips duplicates but allows failed retries', () => {
