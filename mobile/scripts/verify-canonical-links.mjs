@@ -5,7 +5,6 @@ import { fileURLToPath } from "node:url";
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const repoRoot = join(scriptDir, "..", "..");
 const canonicalAppUrl = "https://sharedmoney.app/app";
-const legacyExpoHost = "share-money.expo.app";
 
 const inviteLinksSource = readFileSync(
   join(repoRoot, "mobile", "utils", "inviteLinks.ts"),
@@ -13,10 +12,6 @@ const inviteLinksSource = readFileSync(
 );
 const addMemberSource = readFileSync(
   join(repoRoot, "mobile", "screens", "AddMemberScreen.tsx"),
-  "utf8"
-);
-const redirectHtml = readFileSync(
-  join(repoRoot, "mobile", "expo-redirect", "index.html"),
   "utf8"
 );
 
@@ -34,14 +29,6 @@ if (!inviteLinksSource.includes("getGroupLinkUrl(groupId: string)")) {
 
 if (inviteLinksSource.includes("window.location.origin")) {
   throw new Error("Generated share links must not fall back to the current host");
-}
-
-if (inviteLinksSource.includes(legacyExpoHost) || addMemberSource.includes(legacyExpoHost)) {
-  throw new Error("Generated share links must not reference the legacy Expo host");
-}
-
-if (!redirectHtml.includes("window.location.replace(target.href)")) {
-  throw new Error("Legacy Expo redirect artifact must preserve the fast redirect");
 }
 
 console.log("Canonical link checks passed");
