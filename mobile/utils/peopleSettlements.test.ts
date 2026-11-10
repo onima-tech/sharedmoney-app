@@ -420,3 +420,60 @@ Deno.test("groupContextsFromBalances applies per-group custom rates like the gro
   // Preview/market book converts THB differently — must not match the group rate.
   assertEquals(withLine?.amount === withoutLine?.amount, false);
 });
+
+Deno.test("groupContextsFromBalances omits groups the viewer has left", () => {
+  const groupBalances: GroupBalance[] = [
+    {
+      group_id: "old",
+      group_name: "Old trip",
+      balances: [
+        balance(YOU, -80, { participant_id: "p-you-old" }),
+        balance(MAYA, 80, { participant_id: "p-maya-old", full_name: "Maya", user_id: "u-maya" }),
+      ],
+    },
+    {
+      group_id: "home",
+      group_name: "Roommates",
+      balances: [
+        balance(YOU, 40, { participant_id: "p-you-home" }),
+        balance(MAYA, -40, { participant_id: "p-maya-home", full_name: "Maya", user_id: "u-maya" }),
+      ],
+    },
+  ];
+  const groups: Group[] = [
+    {
+      id: "old",
+      name: "Old trip",
+      created_by: YOU,
+      created_at: "",
+      updated_at: "",
+      user_status: "left",
+      unify_balances: true,
+      settlement_currency: "INR",
+    },
+    {
+      id: "home",
+      name: "Roommates",
+      created_by: YOU,
+      created_at: "",
+      updated_at: "",
+      user_status: "active",
+      unify_balances: true,
+      settlement_currency: "INR",
+    },
+  ];
+
+  const contexts = groupContextsFromBalances({
+    groupBalances,
+    groups,
+    prefsGroups: {},
+    marketBook: book,
+    preferredCurrency: "INR",
+  });
+  assertEquals(contexts.map((item) => item.groupId), ["home"]);
+
+  const [maya] = clubPersonSettlements(contexts, YOU);
+  const plan = personSettlePlan(maya, personSettleNotes(maya));
+  assertEquals(plan.canSettleAll, true);
+  assertEquals(plan.recordable.map((item) => item.group_id), ["home"]);
+});

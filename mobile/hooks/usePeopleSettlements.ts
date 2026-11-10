@@ -43,6 +43,8 @@ export function usePeopleSettlements(options?: UsePeopleSettlementsOptions) {
     for (const groupBalance of balancesQuery.data.group_balances) {
       const stored = currency.prefs.groups[groupBalance.group_id];
       const group = groupById.get(groupBalance.group_id);
+      // Left groups 403 on GET /rates?group_id= (not an active member).
+      if (group?.user_status === "left") continue;
       const settings = stored || groupSettingsFromGroup(group, fallback);
       if (settings.enabled === true) ids.push(groupBalance.group_id);
     }

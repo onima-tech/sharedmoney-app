@@ -63,6 +63,14 @@ export function getUserFriendlyErrorMessage(error: unknown): string {
     return "The requested resource was not found.";
   }
 
+  // Settle-all can include a group the viewer has already left.
+  if (message.includes("not an active group member")) {
+    return "You are not an active member of that group, so the payment was not recorded.";
+  }
+  if (message.includes("recorded") && message.includes("group payment")) {
+    return error.message;
+  }
+
   // Permission errors
   if (message.includes("forbidden") || message.includes("permission") || message.includes("403")) {
     return "You don't have permission to perform this action.";

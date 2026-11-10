@@ -52,6 +52,9 @@ export function resolveSentryReplaySampleRates(input: {
 export function shouldReportRatesFetchError(error: unknown): boolean {
   const message = (error instanceof Error ? error.message : String(error)).trim();
   if (message === "Not authenticated") return false;
+  // Expected when a former member's screen still asks for that group's rates.
+  // The fetch already falls back to disk or preview rates. See REACT-NATIVE-22.
+  if (/not an active group member/i.test(message)) return false;
   if (isBenignConnectivityError(error)) return false;
   if (/HTTP error! status: 504/i.test(message)) return false;
   if (/gateway timeout/i.test(message)) return false;
