@@ -337,7 +337,7 @@ On a new project or restore, apply the `realtime.messages` policy in `supabase/m
 | Edge functions | `.github/workflows/deploy-edge-functions.yml` | Push to `main` (any path) + manual dispatch |
 | Web app (`sharedmoney.app/app`) | Vercel export from `mobile/` into `web/dist/app` | Every Vercel marketing deploy |
 | Marketing site (`web/`, `sharedmoney.app`) | Vercel Git integration (not GitHub Actions); `deploy-marketing.yml` is only a build check | Every push |
-| Legacy Expo redirect (`share-money.expo.app`) | EAS Hosting redirect artifact from `mobile/expo-redirect` | Changes to redirect artifact files + manual dispatch |
+| Legacy Expo redirect (`share-money.expo.app`) | EAS Hosting redirect artifact from `mobile/expo-redirect`, via `.github/workflows/deploy-web.yml` | Manual `workflow_dispatch` only. Push deploy was removed; changing the artifact does not update the host |
 | Database migrations | `.github/workflows/deploy-edge-functions.yml` before function deployment | Push to `main` + manual dispatch |
 | Android / iOS binaries | Manual (`mobile/build-release*.sh`, `eas submit`) | — |
 | Mobile OTA (EAS Update) | `.github/workflows/publish-ota.yml` | Manual `workflow_dispatch` (`preview` default; `production` explicit) |
@@ -346,9 +346,7 @@ On a new project or restore, apply the `realtime.messages` policy in `supabase/m
 
 Vercel Hobby caps the whole account at 100 deployments per rolling 24h, shared with glassmoney and statements-ai. `vercel.json` sets `git.deploymentEnabled` so `cursor/**` (cloud-agent) branches do not create Vercel deployments, unless the branch name contains `preview` (for example `cursor/preview-settle-ab12`). `main`, `ci/*`, `ota/*`, `dependabot/*` and every other branch deploy as before. An Ignored Build Step would not help, because Vercel counts canceled builds against the quota. Need a preview for a `cursor/*` branch? Rename it to include `preview`, or run `vercel deploy` from the repo root (never `--prod`).
 
-Canonical app links must use `https://sharedmoney.app/app`. The Expo hostname is
-kept only as a path-preserving legacy redirect for old links and should not be
-used when generating new invite, group, reminder, or support links.
+Canonical app links must use `https://sharedmoney.app/app`. `https://share-money.expo.app` is still the live path-preserving legacy redirect for old links. Push deploy was removed, so `.github/workflows/deploy-web.yml` (`workflow_dispatch` only) is the update path. Do not use that hostname when generating new invite, group, reminder, or support links.
 
 **Note:** until July 2026, the version bot's commit message contained `[skip ci]`.
 Squash merges inherit that marker into the merge commit message, which made GitHub
