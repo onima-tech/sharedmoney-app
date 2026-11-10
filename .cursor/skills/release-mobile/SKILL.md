@@ -89,9 +89,15 @@ feature/WIP branch that is behind `origin/main`.
 Sources of truth:
 
 - Effective Expo config: `mobile/app.config.js`.
-- Marketing/build source: `mobile/version.json` (`version`, `buildNumber`).
-- Compatibility mirrors: `mobile/package.json` and `mobile/app.json` are updated
-  by `mobile/scripts/version.js`; keep root and mobile lockfiles in sync.
+- Marketing version and build number: `mobile/version.json` only.
+  `mobile/app.config.js` reads it. `.github/workflows/pr-version-bump.yml`
+  bumps it on eligible pull requests.
+- `mobile/package.json` `"version"` is not read by builds and can lag.
+  `mobile/app.json` omits `expo.version` and `ios.buildNumber`; `app.config.js`
+  sets both from `version.json`. Local `npm run version:patch`, `version:minor`,
+  and `version:major` still rewrite those files; the PR workflow does not.
+  Do not ship from those numbers.
+- Keep root and mobile lockfiles in sync when dependencies change.
 - Android `versionCode` / iOS `buildNumber`: from `mobile/version.json`
   through `app.config.js`; `mobile/eas.json` does **not** use remote
   `appVersionSource` in the current repo.
@@ -137,9 +143,10 @@ Guidelines:
   console and verify the saved text is visible before declaring the release complete.
 - Android: open Play Console in the in-app browser, go to the submitted track
   and version code, enter the English (US) release notes, save them, and verify
-  the saved notes. For an internal-track release, update the internal release;
-  for production, update the production release. Do not claim notes were added
-  merely because the AAB upload succeeded.
+  the saved notes. `--profile production` and `--profile internal` both land on
+  the Play internal track, so update that internal release. Update the public
+  production release only after `eas submit --profile store`. Do not claim
+  notes were added merely because the AAB upload succeeded.
 - iOS: after App Store Connect finishes processing the upload, open the build in
   TestFlight, populate **What to Test** with the drafted notes, save, and verify
   the saved text. If Apple processing has not completed, wait or report the
@@ -255,9 +262,12 @@ npx eas-cli@latest submit \
   --wait
 ```
 
-- Android `production` submits to the Play production track using
-  `mobile/eas.json`. Use `--profile internal` only when explicitly doing a test
-  upload.
+- Android `--profile production` submits to the Play **internal** track.
+  `mobile/eas.json` sets `submit.production.android.track` to `internal`
+  because EAS selects the `production` submit profile by default when it
+  exists. `--profile internal` is the same internal track. Only
+  `eas submit --profile store` targets the public Play production track, and
+  only after an internal release has been reviewed. See `mobile/RELEASE.md`.
 - iOS `production` uploads to App Store Connect/TestFlight. Apple processing,
   beta review, and App Store review can continue after EAS submit returns
   success. Do not pass `--what-to-test` by default; EAS treats changelog
