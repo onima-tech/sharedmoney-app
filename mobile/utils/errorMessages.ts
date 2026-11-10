@@ -63,12 +63,14 @@ export function getUserFriendlyErrorMessage(error: unknown): string {
     return "The requested resource was not found.";
   }
 
+  // A partial batch already names payments that saved. Keep that copy even
+  // when the failure reason is "not an active group member".
+  if (message.includes("recorded") && message.includes("group payment")) {
+    return error.message;
+  }
   // Settle-all can include a group the viewer has already left.
   if (message.includes("not an active group member")) {
     return "You are not an active member of that group, so the payment was not recorded.";
-  }
-  if (message.includes("recorded") && message.includes("group payment")) {
-    return error.message;
   }
 
   // Permission errors

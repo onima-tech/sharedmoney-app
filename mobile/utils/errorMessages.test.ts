@@ -12,3 +12,8 @@ Deno.test("partial settle-all copy is not rewritten as a generic server error", 
   const message = "Recorded 1 of 2 group payments, then one failed: Internal server error";
   assertEquals(getUserFriendlyErrorMessage(new Error(message)), message);
 });
+
+Deno.test("partial settle-all keeps earlier payments when a former member fails", () => {
+  const message = "Recorded 1 of 2 group payments, then one failed: Not an active group member";
+  assertEquals(getUserFriendlyErrorMessage(new Error(message)), message);
+});
