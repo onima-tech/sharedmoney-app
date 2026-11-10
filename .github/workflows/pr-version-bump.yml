@@ -134,7 +134,7 @@ jobs:
           git push https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }} HEAD:${{ github.head_ref }}
 
       - name: Fail for forks without maintainer access
-        if: steps.repo.outputs.can_push != 'true'
+        if: steps.repo.outputs.can_push != 'true' && steps.diff.outputs.changed == 'true'
         run: |
           echo "::error::This workflow cannot push to forked repositories. Please run 'npm run version:build' locally and commit the updated mobile/version.json."
           exit 1

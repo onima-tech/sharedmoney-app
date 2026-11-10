@@ -272,7 +272,7 @@ supabase functions deploy function-name
 
 **Required secrets:**
 - `SUPABASE_ACCESS_TOKEN` - Get from https://supabase.com/dashboard/account/tokens
-- `SUPABASE_PROJECT_ID` - Your project reference ID from Settings > General
+- `SUPABASE_PROJECT_REF` - Your project reference ID from Settings > General
 
 **Monthly reminder Edge Function secrets:**
 
@@ -321,6 +321,8 @@ supabase db push
 
 The production workflow requires `SUPABASE_DB_PASSWORD` in addition to the Supabase
 access token and project reference.
+
+On a new project or restore, apply the `realtime.messages` policy in `supabase/manual/realtime_messages_group_sync_rls.sql` by hand (`db push` does not; see `supabase/manual/README.md`).
 
 **Security notes:**
 
@@ -378,7 +380,7 @@ Automatic Edge Functions deployment is configured via GitHub Actions. On every p
    - Click "New repository secret"
    - Add the following secrets:
      - `SUPABASE_ACCESS_TOKEN` - Your Supabase access token
-     - `SUPABASE_PROJECT_ID` - Your Supabase project reference ID
+     - `SUPABASE_PROJECT_REF` - Your Supabase project reference ID
 
 **How It Works:**
 

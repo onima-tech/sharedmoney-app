@@ -1,58 +1,25 @@
 # GitHub Actions Workflows
 
-## Auto Increment Build Number
+## Pull request version bump
 
-**File**: `.github/workflows/auto-increment-build.yml`
+**File**: `.github/workflows/pr-version-bump.yml`
 
 ### Purpose
 
-Automatically increments the build number in `mobile/version.json` whenever code is pushed to the `main` branch.
+Rewrites `mobile/version.json` (and `LATEST_VERSION` in `supabase/functions/_shared/version-config.ts`) on eligible pull requests so the store version stays ahead of `main`.
 
-### How It Works
+Pushes to `main` do not increment the build. `.github/workflows/auto-increment-build.yml` is not in this repo.
 
-1. **Triggers**: Runs on pushes to `main` branch
-2. **Skips**: Automatically skips if:
-   - `version.json` was manually updated in the commit
-   - Commit message contains `[skip ci]` or `[skip build]`
-   - Only workflow files changed
-3. **Action**: Increments build number and commits back to `main`
-4. **Commit**: Creates a commit with message `ci: auto-increment build number to X [skip ci]`
+### How it works
 
-### Usage
+1. **Triggers**: pull request `opened`, `synchronize`, `reopened`, `ready_for_review`
+2. **Skips** when the PR is a draft, or the title starts with `chore`, `docs`, or `ci`
+3. **Action**: from `origin/main`'s `mobile/version.json`, bump the marketing version by PR title (`feat` → minor, a breaking `!` → major, otherwise patch) and set `buildNumber` to main's build plus one
+4. **Commit**: `chore: auto-sync version with PR title [bot]` on the PR branch. It does not update `mobile/package.json` or `mobile/app.json`
 
-**Automatic (Default)**:
-- Just push to `main` - build number increments automatically
-- No action needed
+Forks cannot receive that push. Commit `mobile/version.json` locally instead (`npm run version:build` from `mobile/`).
 
-**Skip Auto-Increment**:
-- Add `[skip ci]` or `[skip build]` to your commit message
-- Example: `git commit -m "fix: bug fix [skip ci]"`
-
-**Manual Version Bump**:
-- Use `npm run version:patch/minor/major` - this increments both version AND build number
-- CI/CD will detect the manual change and skip auto-increment
-
-### Example Workflow
-
-```bash
-# Make changes
-git add .
-git commit -m "feat: add new feature"
-git push origin main
-
-# CI/CD automatically:
-# 1. Detects push to main
-# 2. Increments build number (1 → 2)
-# 3. Commits: "ci: auto-increment build number to 2 [skip ci]"
-# 4. Pushes back to main
-```
-
-### Notes
-
-- Build numbers always increment (never decrease)
-- Version stays the same unless manually bumped
-- The auto-increment commit includes `[skip ci]` to prevent infinite loops
-- Works seamlessly with manual version bumps
+`mobile/version.json` is the version Expo reads via `mobile/app.config.js`. See `mobile/VERSIONING.md`.
 
 ---
 
@@ -62,12 +29,12 @@ git push origin main
 
 ### Purpose
 
-Automatically deploys all Supabase Edge Functions to production whenever Edge Function code is pushed to the `main` branch.
+Automatically deploys all Supabase Edge Functions to production on any push to the `main` branch.
 
 ### How It Works
 
 1. **Triggers**: 
-   - Runs on pushes to `main` branch when files in `supabase/functions/` change
+   - Runs on any push to the `main` branch
    - Can be manually triggered via GitHub Actions UI
 2. **Setup**: Installs Supabase CLI and links to your project
 3. **Deploy**: Deploys all Edge Functions using `supabase functions deploy`
@@ -91,12 +58,12 @@ Automatically deploys all Supabase Edge Functions to production whenever Edge Fu
    - Click "New repository secret"
    - Add the following secrets:
      - `SUPABASE_ACCESS_TOKEN` - Your Supabase access token
-     - `SUPABASE_PROJECT_ID` - Your Supabase project reference ID
+     - `SUPABASE_PROJECT_REF` - Your Supabase project reference ID
 
 ### Usage
 
 **Automatic (Default)**:
-- Push changes to `supabase/functions/` directory
+- Push to the `main` branch (any path)
 - Merge PR to `main` branch
 - Functions are automatically deployed
 

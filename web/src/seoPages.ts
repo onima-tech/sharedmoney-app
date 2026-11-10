@@ -34,10 +34,6 @@ export type SeoPage = {
   related: string[];
 };
 
-export const siteUrl = "https://sharedmoney.app";
-export const appUrl = `${siteUrl}/app`;
-export const brandName = "SharedMoney";
-
 export const seoPages = seoContent as SeoPage[];
 export const pageByPath = new Map(seoPages.map((page) => [page.path, page]));
 export const pageById = new Map(seoPages.map((page) => [page.id, page]));
@@ -55,8 +51,4 @@ export function relatedPages(page: SeoPage): SeoPage[] {
   return page.related
     .map((id) => pageById.get(id))
     .filter((related): related is SeoPage => Boolean(related));
-}
-
-export function pageUrl(page: SeoPage): string {
-  return `${siteUrl}${page.path === "/" ? "" : page.path}`;
 }
