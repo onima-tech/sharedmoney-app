@@ -1,4 +1,5 @@
 import { APP_VERSION } from "../constants/version";
+import { triggerGlobalUpgrade } from "../contexts/UpgradeContext";
 import { supabase } from "../supabase";
 import { ApiErrorResponse } from "../types/api";
 import {
@@ -164,7 +165,6 @@ export async function fetchWithAuth(
     }
     
     // Trigger the global upgrade modal
-    const { triggerGlobalUpgrade } = await import("../contexts/UpgradeContext");
     triggerGlobalUpgrade(
       errorData?.error || "Please update your app to continue.",
       errorData?.details

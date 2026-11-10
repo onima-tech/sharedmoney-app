@@ -52,12 +52,6 @@ export function pairKey(from: string, to: string): string {
   return `${from.toUpperCase()}${PAIR_SEPARATOR}${to.toUpperCase()}`;
 }
 
-export function parsePairKey(key: string): { from: string; to: string } | null {
-  const [from, to] = key.split(PAIR_SEPARATOR);
-  if (!from || !to) return null;
-  return { from: from.toUpperCase(), to: to.toUpperCase() };
-}
-
 export function emptyRateBook(usdRates: Record<string, number> = {}): RateBook {
   return { usdRates: { USD: 1, ...usdRates }, overrides: {} };
 }
@@ -407,12 +401,6 @@ export function formatRateLabel(quote: RateQuote): string {
 export function rateSourceLabel(source: RateSource): string {
   if (source === "group") return "group";
   if (source === "expense") return "expense";
-  return "market";
-}
-
-export function dominantRateSource(parts: ConvertedPart[]): RateSource {
-  if (parts.some((part) => part.quote.source === "expense")) return "expense";
-  if (parts.some((part) => part.quote.source === "group")) return "group";
   return "market";
 }
 

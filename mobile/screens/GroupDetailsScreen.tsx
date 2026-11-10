@@ -536,7 +536,6 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
 
   // Refetch all data function
   const refetchAll = () => {
-    console.log("[GroupDetailsScreen] refetchAll called");
     refetchTx();
     refetchActivity();
     refetchBalances();

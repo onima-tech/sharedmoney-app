@@ -129,13 +129,6 @@ export const UPI_APPS: readonly UpiAppDefinition[] = [
   { id: "bhim", label: "BHIM", scheme: "bhim", payBase: "bhim://upi/pay" },
 ] as const;
 
-/** Schemes to declare for canOpenURL (plus WhatsApp for settle remind). */
-export const UPI_QUERY_SCHEMES: readonly string[] = [
-  ...UPI_APPS.map((app) => app.scheme),
-  "gpay",
-  "whatsapp",
-];
-
 export function buildUpiAppPayUri(
   app: UpiAppDefinition,
   input: UpiPayUriInput,

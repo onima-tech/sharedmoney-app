@@ -74,7 +74,6 @@ Production environment secrets before bundling.
 2. Publish an OTA to that binary's channel
 3. Force-quit and reopen the app (or wait for the next cold start) so the
    downloaded update can apply — there is no in-app restart chip
-4. Confirm Settings / `VersionDisplay` shows a new short update id
 
 ### Rollback
 

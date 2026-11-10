@@ -59,11 +59,6 @@ export const countryCodes: CountryCode[] = [
   { code: "GH", dialCode: "+233", name: "Ghana", flag: "🇬🇭" },
 ];
 
-// Get country code by dial code
-export const getCountryByDialCode = (dialCode: string): CountryCode | undefined => {
-  return countryCodes.find((country) => country.dialCode === dialCode);
-};
-
 // Get country by ISO country code (e.g., 'US', 'CA', 'IN')
 export const getCountryByCode = (code: string): CountryCode | undefined => {
   return countryCodes.find((country) => country.code === code.toUpperCase());

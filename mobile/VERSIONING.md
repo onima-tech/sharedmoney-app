@@ -41,23 +41,6 @@ npm run version:major     # 1.0.0 → 2.0.0
 3. **Build numbers**: Incremented by `pr-version-bump.yml` and by `npm run version:*`
 4. **Unread mirrors**: `package.json` `"version"` is not read by builds. `app.json` omits `expo.version` and `ios.buildNumber` because `app.config.js` overrides them. `scripts/version.js` still rewrites both files on patch/minor/major bumps; the PR workflow does not.
 
-## Version Display in App
-
-Use the `VersionDisplay` component to show version info:
-
-```typescript
-import { VersionDisplay } from './components/VersionDisplay';
-
-// Default display
-<VersionDisplay />
-
-// Compact display
-<VersionDisplay variant="compact" />
-
-// With build date
-<VersionDisplay showBuildDate />
-```
-
 ## CI/CD Automation
 
 ### Pull request version bump

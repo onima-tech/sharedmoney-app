@@ -217,13 +217,6 @@ export function clampShareCount(value: number): number {
   return Math.min(MAX_SHARE_COUNT, Math.max(1, Math.floor(value)));
 }
 
-export function totalShareCount(
-  selectedIds: string[],
-  shares: Record<string, number>,
-): number {
-  return selectedIds.reduce((sum, id) => sum + clampShareCount(shares[id] ?? 1), 0);
-}
-
 export function calculateShareSplits(
   totalAmount: number,
   selectedIds: string[],

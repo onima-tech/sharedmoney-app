@@ -21,18 +21,6 @@ export function getUserDisplayName(
 }
 
 /**
- * Generates a more detailed description for an activity item
- * (Backend already provides basic description, this adds context)
- */
-export function getActivityDescription(
-  activity: ActivityItem,
-  currentUserId?: string
-): string {
-  // Use the description from backend, but we can enhance it here if needed
-  return activity.description;
-}
-
-/**
  * Formats the timestamp for display with timezone awareness
  * Uses date-fns for consistent timezone handling across platforms
  * @param timestamp - ISO timestamp string from database

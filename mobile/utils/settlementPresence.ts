@@ -68,15 +68,6 @@ export function settlementPresenceCaption(
   }
 }
 
-/**
- * @deprecated Inline `·` suffixes were removed; use {@link settlementPresenceCaption}.
- */
-export function settlementPresenceSuffix(
-  presence: SettlementPresence,
-): string | null {
-  return settlementPresenceCaption(presence);
-}
-
 /** Remind / share audience: app members keep group-link copy; others do not. */
 export function settleRemindAudienceFromPresence(
   presence: SettlementPresence,

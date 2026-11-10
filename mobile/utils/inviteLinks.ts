@@ -58,15 +58,6 @@ export function extractGroupDeepLinkId(
   return match ? match[1].toLowerCase() : null;
 }
 
-/**
- * Base URL used when generating shareable invite links.
- * New share links should always use the canonical branded web app, not the
- * current host, so legacy Expo-hosted sessions never mint more Expo links.
- */
-export function getInviteLinkBaseUrl(): string {
-  return getCanonicalWebAppUrl();
-}
-
 export function getCanonicalWebAppUrl(): string {
   return CANONICAL_WEB_APP_URL;
 }

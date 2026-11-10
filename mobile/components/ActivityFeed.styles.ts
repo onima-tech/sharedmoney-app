@@ -69,33 +69,15 @@ export const styles = StyleSheet.create({
     flex: 1,
     marginRight: 8,
   },
-  activityTime: {
-    // handled by font variant
-  },
   activityDescription: {
     // handled by font variant
   },
 
   // Empty State
-  emptyStateCard: {
-    marginTop: SPACING.lg,
-    backgroundColor: 'transparent',
-    borderWidth: 0,
-    elevation: 0,
-  },
   emptyStateContent: {
     alignItems: "center",
     paddingVertical: SPACING.xxl,
     paddingHorizontal: SPACING.lg,
-  },
-  emptyStateIcon: {
-    fontSize: 48,
-    marginBottom: SPACING.lg,
-  },
-  emptyStateTitle: {
-    marginBottom: SPACING.sm,
-    textAlign: "center",
-    fontWeight: '600',
   },
   emptyStateMessage: {
     textAlign: "center",

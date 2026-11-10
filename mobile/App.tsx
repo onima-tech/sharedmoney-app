@@ -1023,8 +1023,6 @@ function AppContent() {
     captureScreenView(currentRoute);
   }, [currentRoute]);
 
-  // All API calls now use React Query hooks or fetchWithAuth utility
-
   const handleCreateGroup = async (groupData: {
     name: string;
     description?: string;
@@ -1871,11 +1869,6 @@ const styles = StyleSheet.create({
     flex: 1,
     width: "100%",
   },
-  transactionFormOverlay: {
-    ...StyleSheet.absoluteFill,
-    zIndex: 20,
-    elevation: 20,
-  },
   appWrapper: {
     flex: 1,
     width: "100%",
@@ -1911,91 +1904,5 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
-  },
-  scrollView: {
-    flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
-  },
-  summarySurface: {
-    margin: 16,
-    marginBottom: 8,
-    borderRadius: 12,
-    padding: 16,
-  },
-  summaryRow: {
-    flexDirection: "row",
-    justifyContent: "space-around",
-    alignItems: "center",
-  },
-  summaryItem: {
-    flex: 1,
-    alignItems: "center",
-  },
-  summaryDivider: {
-    width: 1,
-    height: 40,
-    marginHorizontal: 8,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    paddingVertical: 60,
-  },
-  transactionCard: {
-    marginBottom: 0,
-  },
-  cardContent: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    paddingVertical: 4,
-  },
-  transactionLeft: {
-    flex: 1,
-    marginRight: 16,
-    minWidth: 0,
-  },
-  description: {
-    marginBottom: 8,
-    fontWeight: "600",
-  },
-  metaRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-  },
-  transactionRight: {
-    alignItems: "flex-end",
-    minWidth: 100,
-  },
-  amount: {
-    fontWeight: "bold",
-    marginBottom: 8,
-  },
-  typeChip: {
-    height: 24,
-  },
-  chipAndActions: {
-    flexDirection: "row",
-    alignItems: "center",
-  },
-  actionButtons: {
-    flexDirection: "row",
-    marginLeft: 8,
-  },
-  fab: {
-    position: "absolute",
-    margin: 16,
-    right: 0,
-    bottom: 0,
-  },
-  groupsButton: {
-    position: "absolute",
-    margin: 16,
-    left: 0,
-    bottom: 0,
   },
 });

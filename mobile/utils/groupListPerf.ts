@@ -133,15 +133,3 @@ export function buildGroupListPageLoadedProperties(
     slow: isSlowGroupListLoadMore(sample.loadMoreMs),
   };
 }
-
-/**
- * Human guidance for the PR / ops notes — not enforced in code.
- */
-export const GROUP_LIST_FLASHLIST_HEURISTIC = {
-  watchInSentry:
-    "Breadcrumbs category `ui.list.perf` + tags `group_list_approx_fps` / `group_list_max_frame_gap_ms` / `group_list_load_more_ms` on sessions that later crash or hang.",
-  watchInPostHog:
-    "`group_list_scroll` (sampled) and `group_list_page_loaded` — break down by platform, tab, item_count buckets.",
-  considerFlashListWhen:
-    "Repeated slow scrolls: approx_fps < 40 or max_frame_gap_ms ≥ 100 with item_count ≥ 40 on mid/low devices; or users regularly load 5+ pages while fps stays low. Prefer FlashList over micro-optimizing FlatList props first if those signals recur across users.",
-} as const;

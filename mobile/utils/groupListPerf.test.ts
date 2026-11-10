@@ -1,6 +1,5 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
-  GROUP_LIST_FLASHLIST_HEURISTIC,
   buildGroupListPageLoadedProperties,
   buildGroupListScrollProperties,
   computeApproxFps,
@@ -107,5 +106,4 @@ Deno.test("event properties stay PII-safe counts only", () => {
   });
   assertEquals(page.slow, true);
   assertEquals(page.load_more_ms, 2000);
-  assertEquals(GROUP_LIST_FLASHLIST_HEURISTIC.considerFlashListWhen.length > 20, true);
 });

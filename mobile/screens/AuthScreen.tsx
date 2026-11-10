@@ -305,8 +305,27 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           setFormError(err.message || fallback);
           setOtpCode("");
           return;
-        default:
-          break;
+        case "RATE_LIMITED":
+          setOtpIssue(null);
+          setFormError(err.message || fallback);
+          if (
+            typeof err.retryAfterSeconds === "number" &&
+            err.retryAfterSeconds > 0
+          ) {
+            setResendSeconds(err.retryAfterSeconds);
+          }
+          return;
+        case "FEATURE_DISABLED":
+        case "VALIDATION_ERROR":
+        case "METHOD_NOT_ALLOWED":
+        case "WHATSAPP_BUDGET_EXHAUSTED":
+          setOtpIssue(null);
+          setFormError(err.message || fallback);
+          return;
+        default: {
+          const _exhaustive: never = err.code;
+          return _exhaustive;
+        }
       }
     }
     const message = err instanceof Error ? err.message : fallback;
