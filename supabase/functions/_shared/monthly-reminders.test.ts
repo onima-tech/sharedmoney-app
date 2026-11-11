@@ -1,8 +1,11 @@
 import {
   aggregateMonthlyReminderEmails,
   buildGroupSettlementEdges,
+  buildUpdateNudge,
   getDeliveryReservationMode,
   getPreviousMonthPeriodKey,
+  UPDATE_NUDGE_SENTENCE,
+  type ReminderLastSeenApp,
 } from './monthly-reminders.ts';
 
 function assertEquals(actual: unknown, expected: unknown) {
@@ -285,6 +288,9 @@ Deno.test('aggregateMonthlyReminderEmails creates one digest per user across rol
   assertEquals(alice?.html.includes('You are owed EUR 8.00 by Cory in House'), true);
   assertEquals(alice?.text.includes('A tiny money nudge from SharedMoney.'), true);
   assertEquals(alice?.text.includes('A little settle-up now keeps future you from doing awkward math later.'), true);
+  assertEquals(alice?.html.includes(UPDATE_NUDGE_SENTENCE), false);
+  assertEquals(alice?.text.includes(UPDATE_NUDGE_SENTENCE), false);
+  assertEquals(alice?.html.includes('utm_campaign=update_nudge'), false);
 });
 
 Deno.test('aggregateMonthlyReminderEmails falls back to app icon for logo', () => {
@@ -337,6 +343,106 @@ Deno.test('aggregateMonthlyReminderEmails rejects legacy Expo app URLs', () => {
       }),
     'legacy Expo redirect host',
   );
+});
+
+const PLAY_NUDGE_URL =
+  'https://play.google.com/store/apps/details?id=com.vaibhavarora.sharemoney&utm_campaign=update_nudge';
+const APP_STORE_NUDGE_URL =
+  'https://apps.apple.com/app/id6755923591?utm_campaign=update_nudge';
+
+const nudgeEdge = {
+  group_id: 'group-1',
+  group_name: 'Trip',
+  from_participant_id: 'alice-participant',
+  from_user_id: 'alice-user',
+  from_email: 'alice@example.com',
+  from_name: 'Alice',
+  to_participant_id: 'bob-participant',
+  to_user_id: 'bob-user',
+  to_email: 'bob@example.com',
+  to_name: 'Bob',
+  amount: 12.5,
+  currency: 'USD',
+};
+
+function reminderFor(
+  userId: string,
+  lastSeenByUserId?: ReadonlyMap<string, ReminderLastSeenApp | null>,
+) {
+  const emails = aggregateMonthlyReminderEmails({
+    periodKey: '2026-08',
+    appUrl: 'https://app.example.com',
+    edges: [nudgeEdge],
+    lastSeenByUserId,
+  });
+  const email = emails.find((entry) => entry.user_id === userId);
+  if (!email) throw new Error(`missing reminder for ${userId}`);
+  return email;
+}
+
+function assertNudgeAbsent(email: { html: string; text: string }) {
+  assertEquals(email.html.includes(UPDATE_NUDGE_SENTENCE), false);
+  assertEquals(email.text.includes(UPDATE_NUDGE_SENTENCE), false);
+  assertEquals(email.html.includes('utm_campaign'), false);
+  assertEquals(email.text.includes('utm_campaign'), false);
+  assertEquals(email.html.includes('play.google.com'), false);
+  assertEquals(email.text.includes('apps.apple.com'), false);
+}
+
+Deno.test('update nudge is one line for versions below 2.46.0 and prefers the known store', () => {
+  const android = reminderFor('alice-user', new Map([
+    ['alice-user', { appVersion: '2.30.6', platform: 'android' }],
+  ]));
+  assertEquals(android.html.includes(UPDATE_NUDGE_SENTENCE), true);
+  assertEquals(android.text.includes(UPDATE_NUDGE_SENTENCE), true);
+  assertEquals(android.text.includes(`Google Play: ${PLAY_NUDGE_URL}`), true);
+  assertEquals(android.text.includes('apps.apple.com'), false);
+  assertEquals(android.text.includes('utm_source'), false);
+  assertEquals(android.text.includes('utm_medium'), false);
+  assertEquals(
+    android.html.includes(PLAY_NUDGE_URL.replaceAll('&', '&amp;')),
+    true,
+  );
+  assertEquals(android.html.includes('apps.apple.com'), false);
+  assertNudgeAbsent(reminderFor('bob-user', new Map([
+    ['alice-user', { appVersion: '2.30.6', platform: 'android' }],
+  ])));
+
+  const ios = reminderFor('alice-user', new Map([
+    ['alice-user', { appVersion: '2.32.0', platform: 'ios' }],
+  ]));
+  assertEquals(ios.text.includes(`App Store: ${APP_STORE_NUDGE_URL}`), true);
+  assertEquals(ios.text.includes('play.google.com'), false);
+  assertEquals(ios.html.includes(APP_STORE_NUDGE_URL), true);
+
+  const both = reminderFor('alice-user', new Map([
+    ['alice-user', { appVersion: '2.9.0' }],
+  ]));
+  assertEquals(both.text.includes(`Google Play: ${PLAY_NUDGE_URL}`), true);
+  assertEquals(both.text.includes(`App Store: ${APP_STORE_NUDGE_URL}`), true);
+  assertEquals(both.text.split('\n').filter((line) => line.includes(UPDATE_NUDGE_SENTENCE)).length, 1);
+});
+
+Deno.test('update nudge is omitted at 2.46.0, above it, and when version is missing', () => {
+  const cases: Array<ReminderLastSeenApp | null> = [
+    { appVersion: '2.46.0', platform: 'android' },
+    { appVersion: '2.46.1', platform: 'ios' },
+    { appVersion: '2.48.0' },
+    { appVersion: null, platform: 'android' },
+    { appVersion: '  ', platform: 'ios' },
+    { appVersion: '2.46', platform: 'android' },
+    { appVersion: 'v2.30.6', platform: 'ios' },
+    null,
+  ];
+
+  for (const lastSeen of cases) {
+    assertNudgeAbsent(reminderFor('alice-user', new Map([['alice-user', lastSeen]])));
+  }
+
+  assertNudgeAbsent(reminderFor('alice-user'));
+  assertEquals(buildUpdateNudge({ appVersion: '2.45.9', platform: 'android' })?.text.includes(PLAY_NUDGE_URL), true);
+  assertEquals(buildUpdateNudge({ appVersion: '2.46.0', platform: 'android' }), null);
+  assertEquals(buildUpdateNudge(undefined), null);
 });
 
 Deno.test('getDeliveryReservationMode skips duplicates but allows failed retries', () => {

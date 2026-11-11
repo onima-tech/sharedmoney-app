@@ -1,4 +1,5 @@
 import { buildParticipantCanonicalResolver } from './participant-canonical.ts';
+import { VERSION_CONFIG } from './version-config.ts';
 
 export const MIN_ACTIONABLE_BALANCE = 0.01;
 
@@ -90,11 +91,116 @@ interface BuildGroupSettlementEdgesInput {
   settlements: ReminderSettlement[];
 }
 
+export type ReminderAppPlatform = 'ios' | 'android';
+
+/** Last-seen native app for one reminder recipient. Missing version omits the nudge. */
+export interface ReminderLastSeenApp {
+  appVersion: string | null;
+  platform?: ReminderAppPlatform | null;
+}
+
 interface AggregateReminderEmailsInput {
   periodKey: string;
   appUrl: string;
   logoUrl?: string | null;
   edges: SettlementReminderEdge[];
+  /**
+   * Only users present in this map with a parseable version below
+   * UPDATE_NUDGE_TARGET_VERSION get the store line. Omit the map, or omit a
+   * user, when last-seen version is unknown.
+   */
+  lastSeenByUserId?: ReadonlyMap<string, ReminderLastSeenApp | null>;
+}
+
+/** 2.46.0 store build: quicker expense adding (faster group open, expense flow stays up). */
+export const UPDATE_NUDGE_TARGET_VERSION = '2.46.0';
+export const UPDATE_NUDGE_SENTENCE = 'Update SharedMoney to get quicker expense adding';
+export const UPDATE_NUDGE_UTM_CAMPAIGN = 'update_nudge';
+
+const SEMVER = /^\d+\.\d+\.\d+$/;
+
+function compareSemver(a: string, b: string): number {
+  const partsA = a.split('.').map((part) => Number.parseInt(part, 10));
+  const partsB = b.split('.').map((part) => Number.parseInt(part, 10));
+  for (let i = 0; i < 3; i++) {
+    const diff = (partsA[i] || 0) - (partsB[i] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function normalizePlatform(
+  platform: ReminderAppPlatform | null | undefined,
+): ReminderAppPlatform | null {
+  switch (platform) {
+    case 'ios':
+    case 'android':
+      return platform;
+    case null:
+    case undefined:
+      return null;
+    default: {
+      const unexpected: never = platform;
+      return unexpected;
+    }
+  }
+}
+
+function withUpdateNudgeCampaign(url: string): string {
+  const parsed = new URL(url);
+  parsed.searchParams.set('utm_campaign', UPDATE_NUDGE_UTM_CAMPAIGN);
+  return parsed.toString();
+}
+
+interface UpdateNudgeLink {
+  label: string;
+  url: string;
+}
+
+function nudgeStoreLinks(platform: ReminderAppPlatform | null): UpdateNudgeLink[] {
+  const play: UpdateNudgeLink = {
+    label: 'Google Play',
+    url: withUpdateNudgeCampaign(VERSION_CONFIG.STORE_URL_ANDROID),
+  };
+  const appStore: UpdateNudgeLink = {
+    label: 'App Store',
+    url: withUpdateNudgeCampaign(VERSION_CONFIG.STORE_URL_IOS),
+  };
+  switch (platform) {
+    case 'android':
+      return [play];
+    case 'ios':
+      return [appStore];
+    case null:
+      return [play, appStore];
+    default: {
+      const unexpected: never = platform;
+      return unexpected;
+    }
+  }
+}
+
+/**
+ * One-line store nudge for recipients still below 2.46.0.
+ * Returns null when version is missing, unparseable, or already at/above 2.46.0.
+ */
+export function buildUpdateNudge(
+  lastSeen: ReminderLastSeenApp | null | undefined,
+): { html: string; text: string } | null {
+  const version = lastSeen?.appVersion?.trim() ?? '';
+  if (!SEMVER.test(version)) return null;
+  if (compareSemver(version, UPDATE_NUDGE_TARGET_VERSION) >= 0) return null;
+
+  const links = nudgeStoreLinks(normalizePlatform(lastSeen?.platform));
+  const text = `${UPDATE_NUDGE_SENTENCE}. ${links.map((link) => `${link.label}: ${link.url}`).join(' ')}`;
+  const htmlLinks = links
+    .map((link) =>
+      `<a href="${escapeHtml(link.url)}" style="color:#0f766e;font-weight:700;text-decoration:none;">${escapeHtml(link.label)}</a>`
+    )
+    .join(' · ');
+  const html =
+    `<p style="font-size:13px;color:#526762;margin:12px 0 0;">${escapeHtml(UPDATE_NUDGE_SENTENCE)}. ${htmlLinks}</p>`;
+  return { html, text };
 }
 
 interface ActiveRecipient {
@@ -364,6 +470,7 @@ function addAction(
   appUrl: string,
   logoUrl: string,
   action: ReminderAction,
+  lastSeenByUserId?: ReadonlyMap<string, ReminderLastSeenApp | null>,
 ) {
   if (!emails.has(userId)) {
     const periodLabel = getPeriodLabel(periodKey);
@@ -378,7 +485,8 @@ function addAction(
   }
 
   emails.get(userId)!.actions.push(action);
-  renderReminderEmail(emails.get(userId)!, periodKey, appUrl, logoUrl);
+  const updateNudge = buildUpdateNudge(lastSeenByUserId?.get(userId) ?? null);
+  renderReminderEmail(emails.get(userId)!, periodKey, appUrl, logoUrl, updateNudge);
 }
 
 function renderReminderEmail(
@@ -386,6 +494,7 @@ function renderReminderEmail(
   periodKey: string,
   appUrl: string,
   logoUrl: string,
+  updateNudge: { html: string; text: string } | null,
 ) {
   const periodLabel = getPeriodLabel(periodKey);
   const rows = email.actions.map((action) => {
@@ -460,6 +569,7 @@ function renderReminderEmail(
                   <td style="padding:18px 24px 24px;">
                     <a href="${escapeHtml(appUrl)}" style="display:inline-block;background:#14b8a6;color:#ffffff;font-weight:800;text-decoration:none;padding:12px 18px;border-radius:10px;">Open SharedMoney</a>
                     <p style="font-size:13px;color:#526762;margin:16px 0 0;">A little settle-up now keeps future you from doing awkward math later.</p>
+                    ${updateNudge?.html ?? ''}
                   </td>
                 </tr>
               </tbody>
@@ -482,6 +592,7 @@ function renderReminderEmail(
     `Open SharedMoney: ${appUrl}`,
     '',
     'A little settle-up now keeps future you from doing awkward math later.',
+    ...(updateNudge ? ['', updateNudge.text] : []),
   ].join('\n');
 }
 
@@ -508,6 +619,7 @@ export function aggregateMonthlyReminderEmails(
         amount: edge.amount,
         currency: edge.currency,
       },
+      input.lastSeenByUserId,
     );
     addAction(
       emails,
@@ -525,6 +637,7 @@ export function aggregateMonthlyReminderEmails(
         amount: edge.amount,
         currency: edge.currency,
       },
+      input.lastSeenByUserId,
     );
   }
 

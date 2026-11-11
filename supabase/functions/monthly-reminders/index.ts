@@ -228,6 +228,10 @@ function buildReminderEmails(
     })
   );
 
+  // #479 part A: the update line is rendered only when lastSeenByUserId is
+  // supplied. Nothing persisted today holds last-seen $app_version (profiles,
+  // push_tokens, reminder rows). X-App-Version is checked per request and
+  // discarded. Do not guess a version or email the line to every recipient.
   return aggregateMonthlyReminderEmails({ periodKey, appUrl, logoUrl, edges });
 }
 
