@@ -11,6 +11,7 @@ import {
 import { Skeleton, SkeletonGroup } from "./Skeleton";
 import { useAuth } from "../contexts/AuthContext";
 import { Participant, Settlement, Transaction } from "../types";
+import { getCategoryIcon } from "../utils/categoryIcon";
 import { formatCurrency, getDefaultCurrency } from "../utils/currency";
 import { isUnequalSplit } from "../utils/splits";
 import { openTransactionWithHighlightConsumption } from "../utils/transactionHighlight";
@@ -32,21 +33,6 @@ function formatRelativeDate(raw: string): string {
   if (date.toDateString() === now.toDateString()) return "Today";
   if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function getCategoryIcon(category: string) {
-  const lowerCat = category?.toLowerCase() || "";
-  if (!lowerCat.trim()) return "help-circle-outline";
-  if (lowerCat.includes("food") || lowerCat.includes("restaurant")) return "silverware-fork-knife";
-  if (lowerCat.includes("transport") || lowerCat.includes("taxi") || lowerCat.includes("uber")) return "taxi";
-  if (lowerCat.includes("grocery") || lowerCat.includes("market")) return "cart-outline";
-  if (lowerCat.includes("entertainment") || lowerCat.includes("movie")) return "movie-open-outline";
-  if (lowerCat.includes("travel") || lowerCat.includes("flight")) return "airplane";
-  if (lowerCat.includes("shopping")) return "shopping-outline";
-  if (lowerCat.includes("rent")) return "home-outline";
-  if (lowerCat.includes("utilities") || lowerCat.includes("utility")) return "lightning-bolt-outline";
-  if (lowerCat.includes("health") || lowerCat.includes("medical")) return "medical-bag";
-  return "tag-outline";
 }
 
 export interface LedgerRowProps {
@@ -433,7 +419,8 @@ export const TransactionsEmptyState: React.FC<TransactionsEmptyStateProps> = ({
             accessibilityRole="button"
             accessibilityLabel={emptyCopy.secondaryLabel}
             style={styles.emptySecondaryButton}
-            labelStyle={{ color: theme.colors.onSurfaceVariant }}
+            textColor={theme.colors.primary}
+            labelStyle={{ textDecorationLine: "underline" }}
           >
             {emptyCopy.secondaryLabel}
           </Button>

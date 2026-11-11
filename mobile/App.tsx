@@ -120,6 +120,7 @@ import {
   getConfiguredWebAppPath,
   getInviteLinkErrorMessage,
 } from "./utils/inviteLinks";
+import { DEAD_END_INVITE_LINK_MESSAGE } from "./utils/inviteLinkCopy";
 import { log, logError } from "./utils/logger";
 import { isBenignConnectivityError } from "./utils/networkErrors";
 import { needsTermsAcceptance } from "./utils/onboardingFlow";
@@ -514,7 +515,7 @@ function AppContent() {
       setCurrentRoute("groups");
       setBanner({
         type: "error",
-        message: "This invite link isn't working anymore. Ask whoever invited you to send a new one.",
+        message: DEAD_END_INVITE_LINK_MESSAGE,
       });
     } finally {
       await AsyncStorage.removeItem(PENDING_GROUP_DEEP_LINK_KEY).catch(
