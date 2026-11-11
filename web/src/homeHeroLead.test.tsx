@@ -60,7 +60,7 @@ describe("homepage hero line break", () => {
       />,
     );
     expect(html).toContain(
-      '<p class="hero-lead">Record who paid and who owes for trips, rent and dinners. <br/>No daily limits, no ads, no bank link.</p>',
+      '<p class="hero-lead" id="sm-hero-lead">Record who paid and who owes for trips, rent and dinners. <br/>No daily limits, no ads, no bank link.</p>',
     );
     expect(html).not.toContain("dinners. No daily limits");
   });

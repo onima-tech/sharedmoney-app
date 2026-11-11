@@ -19,6 +19,19 @@
           document.documentElement.classList.add("dark");
         }
 
+        // Same rules as web/src/utils/deviceDetection.ts. CSS uses this to order
+        // store badges and the header Get app link without a React re-render.
+        const userAgent = navigator.userAgent.toLowerCase();
+        const platform = navigator.platform.toLowerCase();
+        const isIOS =
+          /iphone|ipad|ipod/.test(userAgent) ||
+          (platform === "macintel" && navigator.maxTouchPoints > 1);
+        const isAndroid = /android/.test(userAgent);
+        document.documentElement.setAttribute(
+          "data-device",
+          isIOS ? "ios" : isAndroid ? "android" : "desktop",
+        );
+
         const params = new URLSearchParams(window.location.search);
         const hash = window.location.hash || "";
         const hasAuthCallback =

@@ -15,6 +15,10 @@ function report(condition, message) {
   }
 }
 
+function hasUrl(html, url) {
+  return html.includes(url) || html.includes(url.replaceAll("&", "&amp;"));
+}
+
 function outputPath(page) {
   return page.path === "/" ? path.join(distDir, "index.html") : path.join(distDir, page.path, "index.html");
 }
@@ -71,17 +75,30 @@ for (const page of pages) {
   report(html.includes(canonical), `${page.path}: incorrect canonical.`);
   report(!html.includes('name="keywords"'), `${page.path}: deprecated meta keywords tag remains.`);
   report(h1s.length === 1, `${page.path}: expected one H1, found ${h1s.length}.`);
-  report(html.includes(`<h1>${page.heading}</h1>`), `${page.path}: static H1 does not match route content.`);
+  report(
+    page.kind === "home"
+      ? html.includes(`<h1 class="hero-display">${page.heading}</h1>`)
+      : html.includes(`<h1>${page.heading}</h1>`),
+    `${page.path}: static H1 does not match route content.`,
+  );
   report(html.includes('type="application/ld+json"'), `${page.path}: missing structured data.`);
-  report(html.includes(playStoreUrl), `${page.path}: missing Google Play store link.`);
-  report(html.includes(appStoreUrl), `${page.path}: missing App Store install URL.`);
+  report(hasUrl(html, playStoreUrl), `${page.path}: missing Google Play store link.`);
+  report(hasUrl(html, appStoreUrl), `${page.path}: missing App Store install URL.`);
   report(html.includes("Download on the App Store"), `${page.path}: missing App Store CTA copy.`);
   report(!html.includes("App Store listing pending review"), `${page.path}: stale pending-review iOS copy remains.`);
   report(html.includes('data-seo-cta'), `${page.path}: missing SSR CTA tracking markers.`);
   report(html.includes('data-platform="android"'), `${page.path}: missing android SSR CTA marker.`);
   report(html.includes('data-platform="ios"'), `${page.path}: missing ios SSR CTA marker.`);
   report(html.includes('data-platform="web"'), `${page.path}: missing web SSR CTA marker.`);
-  report(html.includes('data-placement="ssr_fallback"'), `${page.path}: missing SSR CTA placement.`);
+  report(
+    page.kind === "home"
+      ? html.includes('data-placement="hero_android"') &&
+          html.includes('data-placement="hero_ios"') &&
+          html.includes('data-placement="hero_secondary"') &&
+          html.includes('data-placement="header"')
+      : html.includes('data-placement="ssr_fallback"'),
+    `${page.path}: missing CTA placement marker.`,
+  );
 
   if (page.kind === "home") {
     report(
@@ -91,8 +108,16 @@ for (const page of pages) {
     );
     report(html.includes("no bank link"), `${page.path}: hero copy must include no bank link.`);
     report(
-      html.includes("dinners. <br>No daily limits, no ads, no bank link."),
+      html.includes("dinners. <br>No daily limits, no ads, no bank link.") ||
+        html.includes("dinners. <br/>No daily limits, no ads, no bank link."),
       `${page.path}: homepage hero must break after dinners.`,
+    );
+    report(html.includes('data-hydrate="home"'), `${page.path}: homepage must hydrate the painted document.`);
+    report(html.includes('id="sm-hero-lead"'), `${page.path}: homepage LCP lead must be in the document.`);
+    report(html.includes("<style>"), `${page.path}: homepage CSS must be inlined.`);
+    report(
+      !/<link rel="stylesheet"[^>]*href="\/assets\/index-[^"]+\.css"/.test(html),
+      `${page.path}: homepage must not render-block on the main stylesheet.`,
     );
     report(
       !html.includes("dinners. No daily limits"),

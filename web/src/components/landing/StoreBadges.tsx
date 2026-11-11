@@ -51,7 +51,10 @@ export function StoreBadgeLink({
       href={destination.href}
       target="_blank"
       rel="noopener noreferrer"
-      onClick={() => trackCtaClick(destination, placement)}
+      data-seo-cta=""
+      data-platform={destination.platform}
+      data-placement={placement}
+      onClick={(event) => trackCtaClick(destination, placement, event.currentTarget)}
     >
       <img
         src={badge.src}

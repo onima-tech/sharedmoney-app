@@ -43,5 +43,11 @@ export function Hero({
 function HeroLead({ body }: { body: string }) {
   const parts = homeHeroLeadParts(body);
   if (!parts) return <p className="hero-lead">{body}</p>;
-  return <p className="hero-lead">{parts.before}<br />{parts.after}</p>;
+  return (
+    <p className="hero-lead" id="sm-hero-lead">
+      {parts.before}
+      <br />
+      {parts.after}
+    </p>
+  );
 }

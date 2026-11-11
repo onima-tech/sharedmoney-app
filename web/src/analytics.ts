@@ -79,7 +79,7 @@ function onSsrCtaClick(event: Event) {
     return;
   }
 
-  trackCtaClick(destination, anchor.dataset.placement || "ssr_fallback");
+  trackCtaClick(destination, anchor.dataset.placement || "ssr_fallback", anchor);
 }
 
 /** Capture clicks on stamped SSR fallback CTAs before React replaces them. */
@@ -133,7 +133,15 @@ export function trackPageView(page: SeoPage) {
   });
 }
 
-export function trackCtaClick(destination: PlatformDestination, placement: string) {
+export function trackCtaClick(
+  destination: PlatformDestination,
+  placement: string,
+  source?: HTMLElement,
+) {
+  // Capture-phase delegation and the React handler can both see one click.
+  if (source?.dataset.seoTracked === "1") return;
+  if (source) source.dataset.seoTracked = "1";
+
   const pathname =
     typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") || "/" : "";
 

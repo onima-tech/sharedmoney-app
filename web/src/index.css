@@ -580,6 +580,11 @@ html.dark .hero-trust-row span {
   gap: 12px;
 }
 
+/* DOM order stays Play then App Store so the hydrated homepage matches. */
+html[data-device="ios"] .store-badges .store-badge-ios {
+  order: -1;
+}
+
 .store-badge {
   display: inline-flex;
   flex: 0 0 auto;
@@ -2237,7 +2242,9 @@ p {
 
 .hero-lead {
   margin-top: 20px;
-  max-width: 30ch;
+  /* 20.14em is Instrument Sans's 30ch at this size. A real ch unit shrinks with the
+     fallback font, then grows when the webfont swaps, and that growth becomes LCP. */
+  max-width: 20.14em;
   color: var(--sm-ink-1);
   font-size: var(--sm-fs-lead);
   font-weight: 520;
@@ -3086,4 +3093,29 @@ html.dark .hero-product-shot,
   .hero-lead {
     max-width: 100%;
   }
+}
+
+/* Header store links: one is shown. iOS is hidden until data-device says so. */
+.header-actions > .header-store-ios {
+  display: none;
+}
+
+html[data-device="ios"] .header-actions > .header-store-android {
+  display: none;
+}
+
+html[data-device="ios"] .header-actions > .header-store-ios {
+  display: inline-flex;
+}
+
+.theme-icon-sun {
+  display: none;
+}
+
+html.dark .theme-icon-moon {
+  display: none;
+}
+
+html.dark .theme-icon-sun {
+  display: block;
 }

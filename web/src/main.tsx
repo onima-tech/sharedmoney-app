@@ -1,5 +1,5 @@
 import { StrictMode } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, hydrateRoot } from "react-dom/client";
 import { initializeAnalytics } from "./analytics";
 import { enableSpeedInsights } from "./speedInsights";
 import { ErrorBoundary } from "./components/ErrorBoundary";
@@ -13,7 +13,12 @@ import { billSplitRoute } from "./billSplitApi";
 if (billSplitRoute(window.location.pathname) === undefined) initializeAnalytics();
 enableSpeedInsights();
 
-createRoot(document.getElementById("root")!).render(
+const rootEl = document.getElementById("root");
+if (!rootEl) {
+  throw new Error("Missing #root");
+}
+
+const app = (
   <StrictMode>
     <ErrorBoundary>
       <ThemeProvider>
@@ -22,3 +27,11 @@ createRoot(document.getElementById("root")!).render(
     </ErrorBoundary>
   </StrictMode>
 );
+
+// The homepage document already contains the painted hero. Hydrate so React
+// reuses that lead node instead of painting a new one after the bundle.
+if (rootEl.dataset.hydrate === "home") {
+  hydrateRoot(rootEl, app);
+} else {
+  createRoot(rootEl).render(app);
+}
