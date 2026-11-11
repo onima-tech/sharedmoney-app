@@ -27,6 +27,7 @@ import { resolveAuthSessionTransition } from "../utils/sentryTriagePolicy";
 import { performLocalLogout } from "../utils/logoutFlow";
 import { syncAnalyticsAuth } from "../utils/posthogAnalytics";
 import { isWebAuthShellActive } from "../utils/webAuthShell";
+import { forgetWebProfileLabel } from "../utils/webProfileShell";
 import { resolveAuthDisplayName } from "../utils/posthogIdentity";
 import {
   canUseNativeGoogleSignIn,
@@ -297,6 +298,13 @@ const [loading, setLoading] = useState<boolean>(() => !isWebAuthShellActive());
       if (transition) {
         recordSentryAuthSessionTransition(transition);
       }
+    }
+    if (
+      Platform.OS === "web" &&
+      previousUserId &&
+      previousUserId !== nextUserId
+    ) {
+      forgetWebProfileLabel();
     }
     previousAuthUserIdRef.current = nextUserId;
 

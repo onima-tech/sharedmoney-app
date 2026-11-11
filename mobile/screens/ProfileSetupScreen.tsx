@@ -69,6 +69,13 @@ import {
   normalizeUpiId,
   UPI_ID_PROFILE_HELPER,
 } from "../utils/upi";
+import {
+  WEB_PROFILE_SHELL_HERO_BLOCK_PX,
+  WEB_PROFILE_SHELL_SUBTITLE,
+  adoptWebProfileHero,
+  isWebProfileShellActive,
+  writeWebProfileHero,
+} from "../utils/webProfileShell";
 import { SplitBillScreen } from "./SplitBillScreen";
 
 interface ProfileSetupScreenProps {
@@ -107,6 +114,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
     useThemePreference();
   const insets = useSafeAreaInsets();
   const { data: profile, updateProfile } = useProfile();
+  const shellOwnsHero = Platform.OS === "web" && isWebProfileShellActive();
   const { preferredCurrency, setPreferredCurrency } = useCurrencyPreferences();
   const [showPreferredCurrencyPicker, setShowPreferredCurrencyPicker] = useState(false);
   const notifications = useNotifications();
@@ -177,6 +185,11 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
       }
     }
   }, [profile]);
+
+  useEffect(() => {
+    if (!shellOwnsHero || !profile) return;
+    writeWebProfileHero(profile.full_name);
+  }, [profile, shellOwnsHero]);
 
   // Update phone when phoneNumber or selectedCountry changes
   useEffect(() => {
@@ -387,21 +400,32 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
                 style={{ backgroundColor: theme.colors.primary }}
               />
             </View>
-            <Text
-              variant="headlineSmall"
-              style={[styles.title, { color: theme.colors.onSurface }]}
-            >
-              {fullName || "Your Profile"}
-            </Text>
-            <Text
-              variant="bodyMedium"
-              style={[
-                styles.subtitle,
-                { color: theme.colors.onSurfaceVariant },
-              ]}
-            >
-              Update your personal details
-            </Text>
+            {shellOwnsHero ? (
+              <View
+                style={styles.shellHeroSlot}
+                ref={(node) => {
+                  adoptWebProfileHero(node as { appendChild(child: unknown): void } | null);
+                }}
+              />
+            ) : (
+              <>
+                <Text
+                  variant="headlineSmall"
+                  style={[styles.title, { color: theme.colors.onSurface }]}
+                >
+                  {fullName || "Your Profile"}
+                </Text>
+                <Text
+                  variant="bodyMedium"
+                  style={[
+                    styles.subtitle,
+                    { color: theme.colors.onSurfaceVariant },
+                  ]}
+                >
+                  {WEB_PROFILE_SHELL_SUBTITLE}
+                </Text>
+              </>
+            )}
           </View>
 
           <Surface
@@ -1106,6 +1130,9 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     textAlign: "center",
   },
+  shellHeroSlot: {
+    height: WEB_PROFILE_SHELL_HERO_BLOCK_PX,
+  },
   subtitle: {
     textAlign: "center",
   },
@@ -1275,3 +1302,26 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
 });
+
+/** App-bar and avatar geometry shared with the static profile hero. */
+export function ProfileBootSkeleton() {
+  const theme = useTheme();
+  return (
+    <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
+      <Appbar.Header style={{ backgroundColor: theme.colors.background }}>
+        <Appbar.Content title="Profile" titleStyle={{ fontWeight: "bold" }} />
+      </Appbar.Header>
+      <View style={styles.scrollContent}>
+        <View style={styles.header}>
+          <View
+            style={[
+              styles.avatarContainer,
+              { backgroundColor: theme.colors.primaryContainer },
+            ]}
+          />
+          <View style={styles.shellHeroSlot} />
+        </View>
+      </View>
+    </View>
+  );
+}

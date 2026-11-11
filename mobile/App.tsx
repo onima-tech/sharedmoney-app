@@ -94,7 +94,7 @@ import { NotificationDetailScreen } from "./screens/NotificationDetailScreen";
 import { NotificationsScreen } from "./screens/NotificationsScreen";
 import { CurrencyMergePreviewScreen } from "./screens/CurrencyMergePreviewScreen";
 import { HomePolishPreviewScreen } from "./screens/HomePolishPreviewScreen";
-import { ProfileSetupScreen } from "./screens/ProfileSetupScreen";
+import { ProfileBootSkeleton, ProfileSetupScreen } from "./screens/ProfileSetupScreen";
 import { SplitwiseImportScreen } from "./screens/SplitwiseImportScreen";
 import { TermsAcceptanceScreen } from "./screens/TermsAcceptanceScreen";
 import { TodayRefinedPreviewScreen } from "./screens/TodayRefinedPreviewScreen";
@@ -119,6 +119,8 @@ import {
   extractInviteToken,
   getConfiguredWebAppPath,
   getInviteLinkErrorMessage,
+  isProfileDeepLink,
+  profileWebPath,
 } from "./utils/inviteLinks";
 import { log, logError } from "./utils/logger";
 import { isBenignConnectivityError } from "./utils/networkErrors";
@@ -140,6 +142,7 @@ import {
 } from "./utils/posthogAnalytics";
 import { enableSpeedInsights } from "./utils/speedInsights";
 import { dismissWebAuthShell } from "./utils/webAuthShell";
+import { dismissWebProfileShell } from "./utils/webProfileShell";
 import { ANALYTICS_EVENTS } from "./utils/posthogEvents";
 import {
   createGroupsHomeLoadClock,
@@ -183,6 +186,18 @@ function captureSentrySourceMapDiagnostic(): void {
 const PENDING_INVITE_TOKEN_KEY = "pending_invite_token";
 const REPORTED_EMAIL_INVITE_JOINS_KEY = "reported_email_invite_group_joins";
 const PENDING_GROUP_DEEP_LINK_KEY = "pending_group_deep_link";
+const PENDING_PROFILE_DEEP_LINK_KEY = "pending_profile_deep_link";
+
+function readInitialRoute(): string {
+  if (
+    Platform.OS === "web" &&
+    typeof window !== "undefined" &&
+    isProfileDeepLink(window.location.href)
+  ) {
+    return "profile";
+  }
+  return "groups";
+}
 
 if (Platform.OS === "web") {
   const ignoredWebWarning =
@@ -295,7 +310,7 @@ function AppContent() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [showAddMember, setShowAddMember] = useState(false);
-  const [currentRoute, setCurrentRoute] = useState<string>("groups");
+  const [currentRoute, setCurrentRoute] = useState<string>(readInitialRoute);
   /** Defer global /balances until groups list can paint first. */
   const { data: homeGroups, isLoading: homeGroupsLoading } = useGroups();
   // Stamp groups_home_loaded when the wait begins. The list screen often
@@ -767,6 +782,19 @@ function AppContent() {
         return;
       }
 
+      if (isProfileDeepLink(url)) {
+        if (session?.user?.id && hasAcceptedCurrentTerms) {
+          setSelectedGroup(null);
+          setStatsContext(null);
+          setCurrentRoute("profile");
+        } else if (!session?.user?.id) {
+          await AsyncStorage.setItem(PENDING_PROFILE_DEEP_LINK_KEY, "1").catch(
+            () => {}
+          );
+        }
+        return;
+      }
+
       const groupId = extractGroupDeepLinkId(url);
       if (!groupId) return;
 
@@ -910,6 +938,30 @@ function AppContent() {
     resolveAnalyticsUserId,
   ]);
 
+  // After authentication and onboarding, open a profile link saved while logged out.
+  useEffect(() => {
+    if (!session?.user?.id || !hasAcceptedCurrentTerms) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const pending = await AsyncStorage.getItem(PENDING_PROFILE_DEEP_LINK_KEY);
+        if (!pending || cancelled) return;
+        await AsyncStorage.removeItem(PENDING_PROFILE_DEEP_LINK_KEY).catch(() => {});
+        if (cancelled) return;
+        setSelectedGroup(null);
+        setStatsContext(null);
+        setCurrentRoute("profile");
+      } catch (err) {
+        logError(err, { context: "pending profile deep link processing" });
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [session?.user?.id, hasAcceptedCurrentTerms]);
+
   // After authentication and onboarding, open any saved group deep link.
   useEffect(() => {
     if (!session?.user?.id || !hasAcceptedCurrentTerms) return;
@@ -933,6 +985,50 @@ function AppContent() {
   useEffect(() => {
     if (session) dismissWebAuthShell();
   }, [session]);
+
+  // The profile hero is the logged-in LCP element. Keep it while Profile is
+  // the route; drop it when this visit is groups, signed out, or blocked.
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    if (currentRoute !== "profile") {
+      dismissWebProfileShell();
+      return;
+    }
+    if (!loading && !session) {
+      dismissWebProfileShell();
+      return;
+    }
+    // A missing profile before the query settles is not a reason to remove the
+    // hero. Doing that on the session-restore render hands LCP back to React.
+    if (!session || profileLoading) return;
+    if (profileError || (profile && needsTermsAcceptance(profile))) {
+      dismissWebProfileShell();
+    }
+  }, [currentRoute, loading, session, profileLoading, profile, profileError]);
+
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof window === "undefined") return;
+    const base = getConfiguredWebAppPath() || "/app";
+    const path = window.location.pathname;
+    if (currentRoute === "profile") {
+      if (!isProfileDeepLink(window.location.href)) {
+        window.history.replaceState(
+          {},
+          "",
+          `${profileWebPath(base)}${window.location.search}${window.location.hash}`,
+        );
+      }
+      return;
+    }
+    if (isProfileDeepLink(path)) {
+      const groupsPath = base.replace(/\/+$/, "") || "/app";
+      window.history.replaceState(
+        {},
+        "",
+        `${groupsPath}${window.location.search}${window.location.hash}`,
+      );
+    }
+  }, [currentRoute]);
 
   // Debug routing / loading state to track "stuck on spinner" issues.
   // To avoid noisy duplicate breadcrumbs, only log when the state snapshot changes.
@@ -1341,6 +1437,18 @@ function AppContent() {
           <GroupsHomeSkeleton />
           <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
             <BottomNavBar currentRoute="groups" onGroupsPress={() => {}}
+              onSettlementsPress={() => {}} onProfilePress={() => {}} onLogoutPress={() => {}} />
+          </View>
+          <StatusBar style={theme.dark ? "light" : "dark"} />
+        </>
+      );
+    }
+    if (currentRoute === "profile") {
+      return (
+        <>
+          <ProfileBootSkeleton />
+          <View pointerEvents="none" accessibilityElementsHidden importantForAccessibility="no-hide-descendants">
+            <BottomNavBar currentRoute="profile" onGroupsPress={() => {}}
               onSettlementsPress={() => {}} onProfilePress={() => {}} onLogoutPress={() => {}} />
           </View>
           <StatusBar style={theme.dark ? "light" : "dark"} />
