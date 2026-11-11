@@ -1,7 +1,10 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import react from "@vitejs/plugin-react";
+import { createServer } from "vite";
 import { renderSeoBodyParagraph } from "../src/homeHeroLead.mjs";
+import { criticalHomeCss } from "../src/splitFontFaces.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.resolve(__dirname, "../dist");
@@ -160,7 +163,7 @@ function replaceMeta(html, selector, markup) {
   return expression.test(html) ? html.replace(expression, markup) : html.replace("</head>", `    ${markup}\n  </head>`);
 }
 
-function renderPage(template, page) {
+function renderPage(template, page, rootHtml) {
   const canonical = pageUrl(page.path);
   const jsonLd = escapeHtml(JSON.stringify(structuredData(page))).replaceAll("&quot;", '"');
   let html = template
@@ -177,7 +180,7 @@ function renderPage(template, page) {
     .replace(/<meta\s+property="twitter:image"[^>]*>/i, `<meta property="twitter:image" content="${ogImage}" />`)
     .replace(/<meta\s+property="twitter:image:alt"[^>]*>/i, `<meta property="twitter:image:alt" content="SharedMoney group balances and shared expense ledger." />`)
     .replace(/<script\s+type="application\/ld\+json">.*?<\/script>/is, `<script type="application/ld+json">${jsonLd}</script>`)
-    .replace('<div id="root"></div>', `<div id="root">${fallbackMarkup(page)}</div>`);
+    .replace('<div id="root"></div>', rootHtml ?? `<div id="root">${fallbackMarkup(page)}</div>`);
 
   html = replaceMeta(html, 'name="description"', `<meta name="description" content="${escapeHtml(page.description)}" />`);
   html = replaceMeta(html, 'property="og:description"', `<meta property="og:description" content="${escapeHtml(page.description)}" />`);
@@ -206,10 +209,77 @@ function notFoundMarkup(template) {
   return html;
 }
 
+async function renderHomeBody() {
+  // The client Vite config aliases React to its CJS entry, which the SSR runner
+  // cannot evaluate. This one-shot server only renders the homepage markup.
+  const server = await createServer({
+    configFile: false,
+    root: path.resolve(__dirname, ".."),
+    plugins: [react()],
+    server: { middlewareMode: true, hmr: false },
+    appType: "custom",
+    logLevel: "error",
+  });
+  try {
+    const mod = await server.ssrLoadModule("/src/entry-ssr.tsx");
+    return mod.renderHomeDocument();
+  } finally {
+    await server.close();
+  }
+}
+
+// The hero lead is the mobile lab LCP node. Inline only the above-the-fold rules
+// so the document can paint it, then load the full sheet (and the bundle) after.
+async function inlineHomeStyles(html) {
+  const linkMatch = html.match(/<link rel="stylesheet"[^>]*href="([^"]+\.css)"[^>]*>/);
+  if (!linkMatch) {
+    throw new Error("Homepage is missing the built stylesheet link");
+  }
+  const href = linkMatch[1];
+  const css = await readFile(path.join(distDir, href), "utf8");
+  const critical = criticalHomeCss(css);
+  if (!critical.includes(".hero-lead") || !critical.includes("20.14em")) {
+    throw new Error("Homepage critical CSS is missing the hero lead rule");
+  }
+  const cssFile = href.replace("/assets/", "");
+  if (!cssFile.startsWith("index-")) {
+    throw new Error(`Unexpected homepage stylesheet name: ${cssFile}`);
+  }
+  const cssRest = cssFile.slice("index-".length);
+  const safeCss = critical.replaceAll("</style", "<\\/style");
+  const scriptMatch = html.match(/<script type="module"[^>]*src="(\/assets\/index-[^"]+\.js)"[^>]*><\/script>/);
+  if (!scriptMatch) {
+    throw new Error("Homepage is missing the module script tag");
+  }
+  const scriptFile = scriptMatch[1].replace("/assets/", "");
+  if (!scriptFile.startsWith("index-")) {
+    throw new Error(`Unexpected homepage script name: ${scriptFile}`);
+  }
+  const scriptRest = scriptFile.slice("index-".length);
+  // A head module runs before first paint, so Lantern puts that bundle on the
+  // hero lead. Load the full sheet and the bundle on the frame after the lead paints.
+  // Split the URLs so the preload scanner does not start them during HTML parse.
+  // No <noscript> stylesheet: Chrome's preload scanner fetches it even when
+  // scripting is enabled, which puts the webfont back on the LCP path.
+  const lateLoader = `<script>(function(){function load(){var link=document.createElement("link");link.rel="stylesheet";link.href="/assets/"+"ind"+"ex-"+${JSON.stringify(cssRest)};document.head.appendChild(link);var script=document.createElement("script");script.type="module";script.src="/assets/"+"ind"+"ex-"+${JSON.stringify(scriptRest)};document.body.appendChild(script);}requestAnimationFrame(function(){requestAnimationFrame(load);});})();</script>`;
+  return html
+    .replace(linkMatch[0], `<style>${safeCss}</style>`)
+    .replace(scriptMatch[0], "")
+    .replace("</body>", `${lateLoader}</body>`);
+}
+
 const template = await readFile(indexPath, "utf8");
+const homeDocument = await renderHomeBody();
 
 for (const page of pages) {
-  const html = renderPage(template, page);
+  const rootHtml =
+    page.kind === "home"
+      ? `<div id="root" data-hydrate="home">${homeDocument}</div>`
+      : undefined;
+  let html = renderPage(template, page, rootHtml);
+  if (page.kind === "home") {
+    html = await inlineHomeStyles(html);
+  }
   const targetDir = page.path === "/" ? distDir : path.join(distDir, page.path);
   await mkdir(targetDir, { recursive: true });
   await writeFile(path.join(targetDir, "index.html"), html);

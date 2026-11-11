@@ -10,6 +10,7 @@ import { InstallSection } from "./components/landing/InstallSection";
 import { TrustSection } from "./components/landing/TrustSection";
 import { UseCases } from "./components/landing/UseCases";
 import { WorkflowSection } from "./components/landing/WorkflowSection";
+import { initialLandingDevice } from "./initialDevice";
 import { getPrimaryDestination, getSecondaryDestinations } from "./landingContent";
 import { pageByPath, relatedPages, normalizeSeoPath, type SeoPage } from "./seoPages";
 import { detectDevice } from "./utils/deviceDetection";
@@ -44,7 +45,17 @@ function ToolDirectory({ page }: { page: SeoPage }) {
 }
 
 function App() {
-  const [device] = useState(detectDevice);
+  // Homepage HTML is rendered for desktop and hydrated in place. A live device read
+  // here would mismatch that document and replace the hero lead, which is the LCP node.
+  const [device] = useState(() =>
+    initialLandingDevice({
+      hasDocument: typeof document !== "undefined",
+      hydrateHome:
+        typeof document !== "undefined" &&
+        document.getElementById("root")?.dataset.hydrate === "home",
+      detected: detectDevice(),
+    }),
+  );
   const [seoPath] = useState(() =>
     typeof window === "undefined" ? "/" : normalizeSeoPath(window.location.pathname),
   );
@@ -79,7 +90,7 @@ function App() {
   if (!seoPage) {
     return (
       <div className="landing-page">
-        <Header primaryDestination={primaryDestination} />
+        <Header />
         <NotFoundPage />
         <Footer />
       </div>
@@ -94,7 +105,7 @@ function App() {
 
   return (
     <div className={`landing-page${toolsSurface ? " tools-surface" : ""}`}>
-      <Header primaryDestination={primaryDestination} />
+      <Header />
 
       <main id="main-content">
         {isHome ? (

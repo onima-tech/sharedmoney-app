@@ -21,21 +21,26 @@ export function PlatformCta({
   appearance = "secondary",
   compactLabel,
   showStatus = false,
+  className,
 }: {
   destination: PlatformDestination;
   placement: string;
   appearance?: "primary" | "secondary" | "text" | "inverse";
   compactLabel?: string;
   showStatus?: boolean;
+  className?: string;
 }) {
   return (
     <a
       href={destination.href}
       target="_blank"
       rel="noopener noreferrer"
-      className={`cta cta-${appearance}`}
+      className={`cta cta-${appearance}${className ? ` ${className}` : ""}`}
       aria-label={compactLabel ?? destination.ariaLabel}
-      onClick={() => trackCtaClick(destination, placement)}
+      data-seo-cta=""
+      data-platform={destination.platform}
+      data-placement={placement}
+      onClick={(event) => trackCtaClick(destination, placement, event.currentTarget)}
     >
       <PlatformIcon platform={destination.platform} />
       <span className="cta-copy">

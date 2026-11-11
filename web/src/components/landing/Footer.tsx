@@ -15,7 +15,7 @@ export function Footer() {
           <a href="/privacy">Privacy</a>
           <a href="/delete-account">Delete account</a>
         </nav>
-        <p>© {new Date().getFullYear()} SharedMoney. All rights reserved.</p>
+        <p>{`© ${new Date().getFullYear()} SharedMoney. All rights reserved.`}</p>
       </div>
     </footer>
   );

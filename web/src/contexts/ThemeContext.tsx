@@ -14,62 +14,49 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
+function applyDarkClass(next: boolean) {
+  document.documentElement.classList.toggle("dark", next);
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [isDark, setIsDark] = useState(() => {
-    // Default to system preference, but respect user's manual choice if stored
-    if (typeof window !== "undefined") {
-      const stored = sessionStorage.getItem("theme");
-      // If user has manually set a theme, respect it
-      if (stored === "dark" || stored === "light") {
-        return stored === "dark";
-      }
-      // Otherwise, follow system preference
-      return window.matchMedia("(prefers-color-scheme: dark)").matches;
-    }
-    return false;
-  });
+  // Start light so the hydrated homepage matches the server render. The head
+  // script already set `html.dark` before paint; the effect below agrees with
+  // that class instead of clearing it from this initial state.
+  const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
-    // Apply theme to document
-    if (isDark) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  }, [isDark]);
-
-  // Listen to system theme changes when user hasn't manually set a preference
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-
     const stored = sessionStorage.getItem("theme");
-    // Only listen to system changes if user hasn't manually set a theme
-    if (stored !== "dark" && stored !== "light") {
-      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const manual = stored === "dark" || stored === "light";
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const next = manual ? stored === "dark" : mediaQuery.matches;
+    applyDarkClass(next);
 
-      const handleChange = (e: MediaQueryListEvent) => {
-        setIsDark(e.matches);
-      };
+    if (manual) return;
 
-      // Modern browsers
-      if (mediaQuery.addEventListener) {
-        mediaQuery.addEventListener("change", handleChange);
-        return () => mediaQuery.removeEventListener("change", handleChange);
-      }
-      // Fallback for older browsers
-      else if (mediaQuery.addListener) {
-        const legacyHandler = () => setIsDark(mediaQuery.matches);
-        mediaQuery.addListener(legacyHandler);
-        return () => mediaQuery.removeListener(legacyHandler);
-      }
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsDark(event.matches);
+      applyDarkClass(event.matches);
+    };
+
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener("change", handleChange);
+      return () => mediaQuery.removeEventListener("change", handleChange);
     }
+
+    const legacyHandler = () => {
+      setIsDark(mediaQuery.matches);
+      applyDarkClass(mediaQuery.matches);
+    };
+    mediaQuery.addListener(legacyHandler);
+    return () => mediaQuery.removeListener(legacyHandler);
   }, []);
 
   const toggleTheme = () => {
-    const newTheme = !isDark;
-    setIsDark(newTheme);
+    const next = !document.documentElement.classList.contains("dark");
+    setIsDark(next);
+    applyDarkClass(next);
     // Save user's manual choice for current session only
-    sessionStorage.setItem("theme", newTheme ? "dark" : "light");
+    sessionStorage.setItem("theme", next ? "dark" : "light");
   };
 
   return (

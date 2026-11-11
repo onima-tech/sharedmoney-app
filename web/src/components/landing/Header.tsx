@@ -1,17 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Menu, Moon, Sun, X } from "lucide-react";
-import type { PlatformDestination } from "../../landingContent";
+import { platformDestinations } from "../../landingContent";
 import { primaryNavigation } from "../../seoPages";
 import { useTheme } from "../../contexts/ThemeContext";
 import { BrandLockup } from "./BrandMark";
 import { PlatformCta } from "./PlatformCta";
 
-export function Header({
-  primaryDestination,
-}: {
-  primaryDestination: PlatformDestination;
-}) {
-  const { isDark, toggleTheme } = useTheme();
+const androidDestination = platformDestinations.find((destination) => destination.platform === "android");
+const iosDestination = platformDestinations.find((destination) => destination.platform === "ios");
+
+export function Header() {
+  const { toggleTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const firstLinkRef = useRef<HTMLAnchorElement>(null);
@@ -79,20 +78,33 @@ export function Header({
         </nav>
 
         <div className="header-actions">
-          <PlatformCta
-            destination={primaryDestination}
-            placement="header"
-            appearance="secondary"
-            compactLabel="Get app"
-          />
+          {androidDestination ? (
+            <PlatformCta
+              destination={androidDestination}
+              placement="header"
+              appearance="secondary"
+              compactLabel="Get app"
+              className="header-store-android"
+            />
+          ) : null}
+          {iosDestination ? (
+            <PlatformCta
+              destination={iosDestination}
+              placement="header"
+              appearance="secondary"
+              compactLabel="Get app"
+              className="header-store-ios"
+            />
+          ) : null}
           <button
             className="icon-button theme-button"
             type="button"
             onClick={toggleTheme}
-            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-            title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            aria-label="Switch color theme"
+            title="Switch color theme"
           >
-            {isDark ? <Sun size={19} aria-hidden /> : <Moon size={19} aria-hidden />}
+            <Sun className="theme-icon theme-icon-sun" size={19} aria-hidden />
+            <Moon className="theme-icon theme-icon-moon" size={19} aria-hidden />
           </button>
           <button
             ref={menuButtonRef}
