@@ -1,31 +1,40 @@
 /**
- * Logged-in Profile hero painted in the Expo web document, before the bundle.
+ * Logged-in Profile header painted in the Expo web document, before the bundle.
  *
- * A signed-in Groups load paints its title only after the JS bundle runs
- * (~1.8s lab LCP). Profile's largest text is this hero (the name line plus
- * "Update your personal details" as one block). A later currency paragraph
- * or a separate name heading is smaller, so this node has to stay in the
- * document. Removing it hands LCP back to whatever React paints.
- *
- * This is not the logged-out login shell. Logged-out visits keep that shell
- * and do not paint this hero.
+ * The name uses the same headline as ProfileSetupScreen. The line under it
+ * stays the muted body subtitle. Logged-out visits keep the login shell and
+ * do not paint this header.
  */
 
 export const WEB_PROFILE_SHELL_ATTR = "data-sm-profile-shell";
 export const WEB_PROFILE_SHELL_ID = "sm-profile-shell";
 export const WEB_PROFILE_SHELL_HERO_ID = "sm-profile-hero";
+export const WEB_PROFILE_SHELL_NAME_ID = "sm-profile-name";
+export const WEB_PROFILE_SHELL_SUBTITLE_ID = "sm-profile-subtitle";
 export const WEB_PROFILE_LABEL_KEY = "sharedmoney.profileLabel";
 export const WEB_PROFILE_SHELL_FALLBACK_NAME = "Your Profile";
 export const WEB_PROFILE_SHELL_SUBTITLE = "Update your personal details";
 /** App bar (64) + scroll padding + header margin + avatar block. */
 export const WEB_PROFILE_SHELL_TOP_PX = 200;
-export const WEB_PROFILE_SHELL_HERO_LINE_PX = 32;
-export const WEB_PROFILE_SHELL_HERO_BLOCK_PX = WEB_PROFILE_SHELL_HERO_LINE_PX * 2;
+/** headlineSmall, plus the bold title style on the Profile name. */
+export const WEB_PROFILE_SHELL_NAME_SIZE_PX = 24;
+export const WEB_PROFILE_SHELL_NAME_LINE_PX = 32;
+/** styles.title marginBottom between the name and the subtitle. */
+export const WEB_PROFILE_SHELL_NAME_GAP_PX = 4;
+/** bodyMedium subtitle under the name. */
+export const WEB_PROFILE_SHELL_SUBTITLE_SIZE_PX = 14;
+export const WEB_PROFILE_SHELL_SUBTITLE_LINE_PX = 20;
+export const WEB_PROFILE_SHELL_HERO_BLOCK_PX =
+  WEB_PROFILE_SHELL_NAME_LINE_PX +
+  WEB_PROFILE_SHELL_NAME_GAP_PX +
+  WEB_PROFILE_SHELL_SUBTITLE_LINE_PX;
 
 const LIGHT_CANVAS = "#F7F9FC";
 const LIGHT_INK = "#17202A";
+const LIGHT_SUBTITLE = "#4A5870";
 const DARK_CANVAS = "#11171D";
 const DARK_INK = "#E6ECF3";
+const DARK_SUBTITLE = "#B7C2CF";
 
 export interface WebProfileShellStorageEntry {
   key: string;
@@ -152,8 +161,7 @@ export function forgetWebProfileLabel(): void {
 }
 
 /**
- * Move the hero into the profile header so it scrolls with the screen.
- * Reparenting keeps the same element, so the early paint stays the LCP.
+ * Move the painted header into the profile screen so it scrolls with the page.
  */
 export function adoptWebProfileHero(
   slot: { appendChild(node: unknown): void } | null,
@@ -164,16 +172,11 @@ export function adoptWebProfileHero(
   slot.appendChild(hero);
 }
 
-/** Keep the early hero node and put the signed-in name in it. */
+/** Put the signed-in name in the headline. The subtitle node stays as body text. */
 export function writeWebProfileHero(fullName: string | null | undefined): void {
-  const doc = shellDocument();
-  const hero = doc?.getElementById?.(WEB_PROFILE_SHELL_HERO_ID);
-  if (!doc || !hero || !doc.createElement || !doc.createTextNode) return;
-  hero.textContent = "";
-  hero.appendChild?.(doc.createTextNode(normalizeProfileLabel(fullName)));
-  const lineBreak = doc.createElement("br");
-  hero.appendChild?.(lineBreak);
-  hero.appendChild?.(doc.createTextNode(WEB_PROFILE_SHELL_SUBTITLE));
+  const name = shellDocument()?.getElementById?.(WEB_PROFILE_SHELL_NAME_ID);
+  if (!name) return;
+  name.textContent = normalizeProfileLabel(fullName);
 }
 
 export function dismissWebProfileShell(): void {
@@ -189,7 +192,7 @@ export function webProfileShellHeadScript(): string {
 }
 
 export function webProfileShellNameScript(): string {
-  return `(function(){try{if(document.documentElement.getAttribute("${WEB_PROFILE_SHELL_ATTR}")!=="1")return;var hero=document.getElementById("${WEB_PROFILE_SHELL_HERO_ID}");if(!hero)return;var name=${JSON.stringify(WEB_PROFILE_SHELL_FALLBACK_NAME)};var saved=localStorage.getItem(${JSON.stringify(WEB_PROFILE_LABEL_KEY)});if(saved!=null){name=saved;}else{for(var i=0;i<localStorage.length;i++){var key=localStorage.key(i);if(!key||key.indexOf("auth-token")===-1)continue;var raw=localStorage.getItem(key);if(!raw||raw.indexOf("access_token")===-1)continue;try{var parsed=JSON.parse(raw);var meta=parsed&&parsed.user&&parsed.user.user_metadata;var candidate=meta&&(meta.full_name||meta.name);if(typeof candidate==="string"&&candidate.trim()){name=candidate;break;}}catch(err){}}}name=(name||"").replace(/\\s+/g," ").trim().slice(0,80)||${JSON.stringify(WEB_PROFILE_SHELL_FALLBACK_NAME)};hero.textContent="";hero.appendChild(document.createTextNode(name));hero.appendChild(document.createElement("br"));hero.appendChild(document.createTextNode(${JSON.stringify(WEB_PROFILE_SHELL_SUBTITLE)}));}catch(e){}})();`;
+  return `(function(){try{if(document.documentElement.getAttribute("${WEB_PROFILE_SHELL_ATTR}")!=="1")return;var nameEl=document.getElementById("${WEB_PROFILE_SHELL_NAME_ID}");if(!nameEl)return;var name=${JSON.stringify(WEB_PROFILE_SHELL_FALLBACK_NAME)};var saved=localStorage.getItem(${JSON.stringify(WEB_PROFILE_LABEL_KEY)});if(saved!=null){name=saved;}else{for(var i=0;i<localStorage.length;i++){var key=localStorage.key(i);if(!key||key.indexOf("auth-token")===-1)continue;var raw=localStorage.getItem(key);if(!raw||raw.indexOf("access_token")===-1)continue;try{var parsed=JSON.parse(raw);var meta=parsed&&parsed.user&&parsed.user.user_metadata;var candidate=meta&&(meta.full_name||meta.name);if(typeof candidate==="string"&&candidate.trim()){name=candidate;break;}}catch(err){}}}name=(name||"").replace(/\\s+/g," ").trim().slice(0,80)||${JSON.stringify(WEB_PROFILE_SHELL_FALLBACK_NAME)};nameEl.textContent=name;}catch(e){}})();`;
 }
 
 function shellCss(): string {
@@ -197,17 +200,20 @@ function shellCss(): string {
     `#${WEB_PROFILE_SHELL_ID}{display:none;}`,
     `html[${WEB_PROFILE_SHELL_ATTR}="1"] body{background:${LIGHT_CANVAS};}`,
     `html[${WEB_PROFILE_SHELL_ATTR}="1"] #${WEB_PROFILE_SHELL_ID}{display:block;position:fixed;z-index:2;top:${WEB_PROFILE_SHELL_TOP_PX}px;left:16px;right:16px;pointer-events:none;}`,
-    `#${WEB_PROFILE_SHELL_HERO_ID}{margin:0;padding:0;max-height:${WEB_PROFILE_SHELL_HERO_BLOCK_PX}px;overflow:hidden;font-family:Roboto,"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:24px;line-height:${WEB_PROFILE_SHELL_HERO_LINE_PX}px;font-weight:700;letter-spacing:0;text-align:center;color:${LIGHT_INK};}`,
-    `@media (prefers-color-scheme: dark){html[${WEB_PROFILE_SHELL_ATTR}="1"]:not(.sm-profile-light) body{background:${DARK_CANVAS};}html[${WEB_PROFILE_SHELL_ATTR}="1"]:not(.sm-profile-light) #${WEB_PROFILE_SHELL_HERO_ID}{color:${DARK_INK};}}`,
+    `#${WEB_PROFILE_SHELL_NAME_ID}{margin:0 0 ${WEB_PROFILE_SHELL_NAME_GAP_PX}px;padding:0;font-family:Roboto,"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:${WEB_PROFILE_SHELL_NAME_SIZE_PX}px;line-height:${WEB_PROFILE_SHELL_NAME_LINE_PX}px;font-weight:700;letter-spacing:0;text-align:center;color:${LIGHT_INK};}`,
+    `#${WEB_PROFILE_SHELL_SUBTITLE_ID}{margin:0;padding:0;font-family:Roboto,"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:${WEB_PROFILE_SHELL_SUBTITLE_SIZE_PX}px;line-height:${WEB_PROFILE_SHELL_SUBTITLE_LINE_PX}px;font-weight:400;letter-spacing:0;text-align:center;color:${LIGHT_SUBTITLE};}`,
+    `@media (prefers-color-scheme: dark){html[${WEB_PROFILE_SHELL_ATTR}="1"]:not(.sm-profile-light) body{background:${DARK_CANVAS};}html[${WEB_PROFILE_SHELL_ATTR}="1"]:not(.sm-profile-light) #${WEB_PROFILE_SHELL_NAME_ID}{color:${DARK_INK};}html[${WEB_PROFILE_SHELL_ATTR}="1"]:not(.sm-profile-light) #${WEB_PROFILE_SHELL_SUBTITLE_ID}{color:${DARK_SUBTITLE};}}`,
     `html[${WEB_PROFILE_SHELL_ATTR}="1"].sm-profile-dark body{background:${DARK_CANVAS};}`,
-    `html[${WEB_PROFILE_SHELL_ATTR}="1"].sm-profile-dark #${WEB_PROFILE_SHELL_HERO_ID}{color:${DARK_INK};}`,
+    `html[${WEB_PROFILE_SHELL_ATTR}="1"].sm-profile-dark #${WEB_PROFILE_SHELL_NAME_ID}{color:${DARK_INK};}`,
+    `html[${WEB_PROFILE_SHELL_ATTR}="1"].sm-profile-dark #${WEB_PROFILE_SHELL_SUBTITLE_ID}{color:${DARK_SUBTITLE};}`,
     `html[${WEB_PROFILE_SHELL_ATTR}="1"].sm-profile-light body{background:${LIGHT_CANVAS};}`,
-    `html[${WEB_PROFILE_SHELL_ATTR}="1"].sm-profile-light #${WEB_PROFILE_SHELL_HERO_ID}{color:${LIGHT_INK};}`,
+    `html[${WEB_PROFILE_SHELL_ATTR}="1"].sm-profile-light #${WEB_PROFILE_SHELL_NAME_ID}{color:${LIGHT_INK};}`,
+    `html[${WEB_PROFILE_SHELL_ATTR}="1"].sm-profile-light #${WEB_PROFILE_SHELL_SUBTITLE_ID}{color:${LIGHT_SUBTITLE};}`,
   ].join("");
 }
 
 function shellMarkup(): string {
-  return `<div id="${WEB_PROFILE_SHELL_ID}"><p id="${WEB_PROFILE_SHELL_HERO_ID}">${WEB_PROFILE_SHELL_FALLBACK_NAME}<br>${WEB_PROFILE_SHELL_SUBTITLE}</p></div><script>${webProfileShellNameScript()}</script>`;
+  return `<div id="${WEB_PROFILE_SHELL_ID}"><div id="${WEB_PROFILE_SHELL_HERO_ID}"><p id="${WEB_PROFILE_SHELL_NAME_ID}">${WEB_PROFILE_SHELL_FALLBACK_NAME}</p><p id="${WEB_PROFILE_SHELL_SUBTITLE_ID}">${WEB_PROFILE_SHELL_SUBTITLE}</p></div></div><script>${webProfileShellNameScript()}</script>`;
 }
 
 /** Insert the Profile hero into an Expo web `index.html`. Idempotent. */

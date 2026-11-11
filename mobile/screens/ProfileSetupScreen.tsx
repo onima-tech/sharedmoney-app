@@ -416,15 +416,10 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
                   {fullName || "Your Profile"}
                 </Text>
                 <Text
-                  variant={Platform.OS === "web" ? "headlineSmall" : "bodyMedium"}
+                  variant="bodyMedium"
                   style={[
-                    Platform.OS === "web" ? styles.title : styles.subtitle,
-                    {
-                      color:
-                        Platform.OS === "web"
-                          ? theme.colors.onSurface
-                          : theme.colors.onSurfaceVariant,
-                    },
+                    styles.subtitle,
+                    { color: theme.colors.onSurfaceVariant },
                   ]}
                 >
                   {WEB_PROFILE_SHELL_SUBTITLE}

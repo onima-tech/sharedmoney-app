@@ -5,9 +5,15 @@ import {
   WEB_PROFILE_SHELL_FALLBACK_NAME,
   WEB_PROFILE_SHELL_HERO_BLOCK_PX,
   WEB_PROFILE_SHELL_HERO_ID,
-  WEB_PROFILE_SHELL_HERO_LINE_PX,
   WEB_PROFILE_SHELL_ID,
+  WEB_PROFILE_SHELL_NAME_GAP_PX,
+  WEB_PROFILE_SHELL_NAME_ID,
+  WEB_PROFILE_SHELL_NAME_LINE_PX,
+  WEB_PROFILE_SHELL_NAME_SIZE_PX,
   WEB_PROFILE_SHELL_SUBTITLE,
+  WEB_PROFILE_SHELL_SUBTITLE_ID,
+  WEB_PROFILE_SHELL_SUBTITLE_LINE_PX,
+  WEB_PROFILE_SHELL_SUBTITLE_SIZE_PX,
   WEB_PROFILE_SHELL_TOP_PX,
   injectWebProfileShell,
   normalizeProfileLabel,
@@ -102,23 +108,41 @@ Deno.test("profile label prefers the saved name over the auth metadata", () => {
   assertEquals(readProfileLabelFromStorage([]), WEB_PROFILE_SHELL_FALLBACK_NAME);
 });
 
-Deno.test("exported index.html gains one profile hero and leaves the login shell alone", () => {
+Deno.test("exported index.html uses the Profile headline and muted subtitle", () => {
   const html = injectWebProfileShell(EXPO_INDEX);
   assertEquals(html.includes(`id="${WEB_PROFILE_SHELL_ID}"`), true);
   assertEquals(html.includes(`id="${WEB_PROFILE_SHELL_HERO_ID}"`), true);
   assertEquals(
-    html.includes(`${WEB_PROFILE_SHELL_FALLBACK_NAME}<br>${WEB_PROFILE_SHELL_SUBTITLE}`),
+    html.includes(`<p id="${WEB_PROFILE_SHELL_NAME_ID}">${WEB_PROFILE_SHELL_FALLBACK_NAME}</p>`),
+    true,
+  );
+  assertEquals(
+    html.includes(`<p id="${WEB_PROFILE_SHELL_SUBTITLE_ID}">${WEB_PROFILE_SHELL_SUBTITLE}</p>`),
     true,
   );
   assertEquals(html.includes(`top:${WEB_PROFILE_SHELL_TOP_PX}px`), true);
-  assertEquals(html.includes(`line-height:${WEB_PROFILE_SHELL_HERO_LINE_PX}px`), true);
-  assertEquals(html.includes(`max-height:${WEB_PROFILE_SHELL_HERO_BLOCK_PX}px`), true);
+  assertEquals(
+    html.includes(
+      `#${WEB_PROFILE_SHELL_NAME_ID}{margin:0 0 ${WEB_PROFILE_SHELL_NAME_GAP_PX}px;padding:0;font-family:Roboto,"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:${WEB_PROFILE_SHELL_NAME_SIZE_PX}px;line-height:${WEB_PROFILE_SHELL_NAME_LINE_PX}px;font-weight:700;`,
+    ),
+    true,
+  );
+  assertEquals(
+    html.includes(
+      `#${WEB_PROFILE_SHELL_SUBTITLE_ID}{margin:0;padding:0;font-family:Roboto,"Helvetica Neue",Helvetica,Arial,sans-serif;font-size:${WEB_PROFILE_SHELL_SUBTITLE_SIZE_PX}px;line-height:${WEB_PROFILE_SHELL_SUBTITLE_LINE_PX}px;font-weight:400;`,
+    ),
+    true,
+  );
+  assertEquals(html.includes("max-height:"), false);
+  assertEquals(html.includes(`${WEB_PROFILE_SHELL_FALLBACK_NAME}<br>`), false);
   assertEquals(html.includes("Log in to SharedMoney"), false);
   assertEquals(html.indexOf(`id="${WEB_PROFILE_SHELL_ID}"`) < html.indexOf('id="root"'), true);
   assertEquals(injectWebProfileShell(html), html);
   assertEquals(
     WEB_PROFILE_SHELL_HERO_BLOCK_PX,
-    WEB_PROFILE_SHELL_HERO_LINE_PX * 2,
+    WEB_PROFILE_SHELL_NAME_LINE_PX +
+      WEB_PROFILE_SHELL_NAME_GAP_PX +
+      WEB_PROFILE_SHELL_SUBTITLE_LINE_PX,
   );
 });
 
@@ -198,13 +222,8 @@ Deno.test("name script fills the hero from the saved label without touching othe
     paint: boolean;
     entries?: Array<[string, string]>;
   }) => {
-    const children: Array<{ text?: string; tag?: string }> = [];
-    const hero = {
-      textContent: "",
-      appendChild(node: { text?: string; tag?: string }) {
-        children.push(node);
-      },
-    };
+    const name = { textContent: WEB_PROFILE_SHELL_FALLBACK_NAME };
+    const subtitle = { textContent: WEB_PROFILE_SHELL_SUBTITLE };
     const store = new Map(page.entries ?? []);
     const fn = new Function("document", "localStorage", script);
     fn(
@@ -212,9 +231,11 @@ Deno.test("name script fills the hero from the saved label without touching othe
         documentElement: {
           getAttribute: () => (page.paint ? "1" : "0"),
         },
-        getElementById: () => hero,
-        createElement: (tag: string) => ({ tag }),
-        createTextNode: (text: string) => ({ text }),
+        getElementById: (id: string) => {
+          if (id === WEB_PROFILE_SHELL_NAME_ID) return name;
+          if (id === WEB_PROFILE_SHELL_SUBTITLE_ID) return subtitle;
+          return null;
+        },
       },
       {
         length: store.size,
@@ -222,29 +243,26 @@ Deno.test("name script fills the hero from the saved label without touching othe
         getItem: (key: string) => store.get(key) ?? null,
       },
     );
-    return children;
+    return { name: name.textContent, subtitle: subtitle.textContent };
   };
 
-  assertEquals(run({ paint: false, entries: [[WEB_PROFILE_LABEL_KEY, "Grace Hopper"]] }), []);
-  assertEquals(run({ paint: true }), [
-    { text: WEB_PROFILE_SHELL_FALLBACK_NAME },
-    { tag: "br" },
-    { text: WEB_PROFILE_SHELL_SUBTITLE },
-  ]);
+  assertEquals(
+    run({ paint: false, entries: [[WEB_PROFILE_LABEL_KEY, "Grace Hopper"]] }),
+    { name: WEB_PROFILE_SHELL_FALLBACK_NAME, subtitle: WEB_PROFILE_SHELL_SUBTITLE },
+  );
+  assertEquals(run({ paint: true }), {
+    name: WEB_PROFILE_SHELL_FALLBACK_NAME,
+    subtitle: WEB_PROFILE_SHELL_SUBTITLE,
+  });
   assertEquals(
     run({
       paint: true,
       entries: [[WEB_PROFILE_LABEL_KEY, "Grace Hopper"], [SESSION.key, SESSION.value]],
     }),
-    [
-      { text: "Grace Hopper" },
-      { tag: "br" },
-      { text: WEB_PROFILE_SHELL_SUBTITLE },
-    ],
+    { name: "Grace Hopper", subtitle: WEB_PROFILE_SHELL_SUBTITLE },
   );
-  assertEquals(run({ paint: true, entries: [[SESSION.key, SESSION.value]] }), [
-    { text: "Ada Lovelace" },
-    { tag: "br" },
-    { text: WEB_PROFILE_SHELL_SUBTITLE },
-  ]);
+  assertEquals(run({ paint: true, entries: [[SESSION.key, SESSION.value]] }), {
+    name: "Ada Lovelace",
+    subtitle: WEB_PROFILE_SHELL_SUBTITLE,
+  });
 });
