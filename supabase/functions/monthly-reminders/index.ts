@@ -1,6 +1,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { createErrorResponse, handleError } from '../_shared/error-handler.ts';
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from '../_shared/env.ts';
+import { loadLastSeenByUserId } from '../_shared/last-seen-app.ts';
 import { fetchUserEmails } from '../_shared/user-email.ts';
 import { log } from '../_shared/logger.ts';
 import {
@@ -9,6 +10,7 @@ import {
   getDeliveryReservationMode,
   getPreviousMonthPeriodKey,
   type ReminderEmail,
+  type ReminderLastSeenApp,
   type ReminderGroup,
   type ReminderParticipant,
   type ReminderSettlement,
@@ -192,6 +194,7 @@ function buildReminderEmails(
   appUrl: string,
   logoUrl: string | null,
   inputs: Awaited<ReturnType<typeof fetchReminderInputs>>,
+  lastSeenByUserId?: ReadonlyMap<string, ReminderLastSeenApp | null>,
 ): ReminderEmail[] {
   const participantsByGroup = new Map<string, ReminderParticipant[]>();
   const transactionsByGroup = new Map<string, ReminderTransaction[]>();
@@ -228,11 +231,13 @@ function buildReminderEmails(
     })
   );
 
-  // #479 part A: the update line is rendered only when lastSeenByUserId is
-  // supplied. Nothing persisted today holds last-seen $app_version (profiles,
-  // push_tokens, reminder rows). X-App-Version is checked per request and
-  // discarded. Do not guess a version or email the line to every recipient.
-  return aggregateMonthlyReminderEmails({ periodKey, appUrl, logoUrl, edges });
+  return aggregateMonthlyReminderEmails({
+    periodKey,
+    appUrl,
+    logoUrl,
+    edges,
+    lastSeenByUserId,
+  });
 }
 
 async function loadExistingDeliveries(
@@ -465,7 +470,11 @@ Deno.serve(async (req: Request) => {
     });
 
     const inputs = await fetchReminderInputs(supabase);
-    const emails = buildReminderEmails(periodKey, appUrl, logoUrl, inputs);
+    const lastSeenByUserId = await loadLastSeenByUserId(
+      supabase,
+      inputs.participants.flatMap((participant) => participant.user_id ? [participant.user_id] : []),
+    );
+    const emails = buildReminderEmails(periodKey, appUrl, logoUrl, inputs, lastSeenByUserId);
 
     if (dryRun) {
       return createSuccessResponse({

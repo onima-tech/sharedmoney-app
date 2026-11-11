@@ -1,5 +1,6 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { verifyAuth } from '../_shared/auth.ts';
+import { lastSeenForPushRegistration, persistLastSeenApp } from '../_shared/last-seen-app.ts';
 import {
   buildNotificationCursorFilter,
   isNotificationPermissionStatus,
@@ -362,6 +363,10 @@ Deno.serve(async (req: Request) => {
           .select('id, platform, active, last_seen_at')
           .single();
         if (error) return handleError(error, 'registering push token', req);
+        const lastSeen = lastSeenForPushRegistration(req.headers, platform);
+        if (lastSeen) {
+          await persistLastSeenApp(supabase, user.id, lastSeen);
+        }
         return createSuccessResponse(data, 200, 0, req);
       }
 
