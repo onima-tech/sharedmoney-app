@@ -1,4 +1,4 @@
-import { verifyAuth } from '../_shared/auth.ts';
+import { recordLastSeenAppIfAuthenticated, verifyAuth } from '../_shared/auth.ts';
 import { createErrorResponse, handleError } from '../_shared/error-handler.ts';
 import { parsePath } from '../_shared/path-parser.ts';
 import { createEmptyResponse, createSuccessResponse } from '../_shared/response.ts';
@@ -56,9 +56,11 @@ Deno.serve(async (req: Request) => {
     return createEmptyResponse(200, req);
   }
 
-  // Check app version - return 426 if outdated
+  // Check app version - return 426 if outdated. A valid session still
+  // records X-App-Version so reminder emails can see the old build.
   const versionError = requireMinVersion(req);
   if (versionError) {
+    await recordLastSeenAppIfAuthenticated(req);
     return versionError;
   }
 

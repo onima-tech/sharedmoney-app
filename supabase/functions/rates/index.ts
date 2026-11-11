@@ -1,5 +1,5 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { verifyAuth } from "../_shared/auth.ts";
+import { recordLastSeenAppIfAuthenticated, verifyAuth } from "../_shared/auth.ts";
 import { SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL } from "../_shared/env.ts";
 import { createErrorResponse, handleError } from "../_shared/error-handler.ts";
 import { log } from "../_shared/logger.ts";
@@ -286,6 +286,7 @@ Deno.serve(async (req: Request) => {
 
   const versionError = requireMinVersion(req);
   if (versionError) {
+    await recordLastSeenAppIfAuthenticated(req);
     return versionError;
   }
 

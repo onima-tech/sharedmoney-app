@@ -1,5 +1,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { SUPABASE_URL, SUPABASE_ANON_KEY } from './env.ts';
+import { recordLastSeenAppFromRequest } from './last-seen-app.ts';
+import { log } from './logger.ts';
 
 export interface UserInfo {
   id: string;
@@ -40,6 +42,8 @@ export async function verifyAuth(request: Request): Promise<{ user: UserInfo; su
     throw new Error('Unauthorized: Invalid or expired token');
   }
 
+  await recordLastSeenAppFromRequest(supabase, user.id, request);
+
   return {
     user: {
       id: user.id,
@@ -47,4 +51,21 @@ export async function verifyAuth(request: Request): Promise<{ user: UserInfo; su
     },
     supabase,
   };
+}
+
+/**
+ * Records X-App-Version when the caller has a session.
+ * HTTP 426 still wins when the session is missing or expired.
+ */
+export async function recordLastSeenAppIfAuthenticated(request: Request): Promise<void> {
+  try {
+    await verifyAuth(request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (!message.startsWith('Unauthorized')) {
+      log.warn('Last-seen app version was not recorded before upgrade response', 'auth', {
+        error: message.slice(0, 200),
+      });
+    }
+  }
 }
