@@ -1,7 +1,9 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { fetchWithAuth } from "../utils/api";
 import { logError } from "../utils/logger";
+import { rememberWebProfileLabel } from "../utils/webProfileShell";
 import { queryKeys } from "./queryKeys";
 
 export interface Profile {
@@ -53,6 +55,11 @@ export function useProfile() {
     },
     staleTime: 60_000,
   });
+
+  useEffect(() => {
+    if (!profileQuery.data) return;
+    rememberWebProfileLabel(profileQuery.data.full_name);
+  }, [profileQuery.data]);
 
   const updateProfileMutation = useMutation<Profile, Error, ProfileUpdate>({
     mutationFn: async (updates: ProfileUpdate) => {

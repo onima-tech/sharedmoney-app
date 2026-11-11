@@ -1,5 +1,8 @@
 import { Platform } from "react-native";
 import { getUserFriendlyErrorMessage } from "./errorMessages";
+import { isProfileDeepLink, profileWebPath } from "./profileLink";
+
+export { isProfileDeepLink, profileWebPath };
 
 export const CANONICAL_WEB_APP_URL = "https://sharedmoney.app/app";
 
@@ -78,6 +81,10 @@ export function getInviteLinkUrl(token: string): string {
 
 export function getGroupLinkUrl(groupId: string): string {
   return buildWebAppUrl(`groups/${encodeURIComponent(groupId)}`);
+}
+
+export function getProfileLinkUrl(): string {
+  return buildWebAppUrl("profile");
 }
 
 export function getConfiguredWebAppPath(): string {
