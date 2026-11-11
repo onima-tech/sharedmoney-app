@@ -433,7 +433,11 @@ export const TransactionsEmptyState: React.FC<TransactionsEmptyStateProps> = ({
             accessibilityRole="button"
             accessibilityLabel={emptyCopy.secondaryLabel}
             style={styles.emptySecondaryButton}
-            labelStyle={{ color: theme.colors.onSurfaceVariant }}
+            textColor={theme.colors.primary}
+            labelStyle={{
+              color: theme.colors.primary,
+              textDecorationLine: "underline",
+            }}
           >
             {emptyCopy.secondaryLabel}
           </Button>

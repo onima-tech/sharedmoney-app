@@ -55,10 +55,17 @@ test('Paper menu consumes Back only while visible, preventing parent form dismis
   }
 });
 
-test('quiet expense action retains button semantics', () => {
+test('quiet expense action retains button semantics and link treatment', () => {
   const action = id('components/TransactionsSection.tsx', 'empty-add-expense-anyway');
+  assert.equal(action.prop('mode'), 'text');
   assert.equal(action.prop('accessibilityRole'), 'button');
   assert.equal(action.prop('accessibilityLabel', { emptyCopy: { secondaryLabel: 'Add an expense first' } }), 'Add an expense first');
+  const theme = { colors: { primary: '#1F5EFF' } };
+  assert.equal(action.prop('textColor', { theme }), '#1F5EFF');
+  const labelStyle = action.prop('labelStyle', { theme });
+  assert.equal(labelStyle.color, '#1F5EFF');
+  assert.equal(labelStyle.textDecorationLine, 'underline');
+  assert.equal(labelStyle.fontWeight, undefined);
 });
 
 test('read-only settlement payer and expense amount have purpose labels', () => {

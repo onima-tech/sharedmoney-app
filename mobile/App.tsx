@@ -514,7 +514,7 @@ function AppContent() {
       setCurrentRoute("groups");
       setBanner({
         type: "error",
-        message: "This invite link isn't working anymore. Ask whoever invited you to send a new one.",
+        message: "This invite link isn't working anymore. Ask whoever invited you for a new link.",
       });
     } finally {
       await AsyncStorage.removeItem(PENDING_GROUP_DEEP_LINK_KEY).catch(
