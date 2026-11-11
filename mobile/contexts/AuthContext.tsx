@@ -26,6 +26,7 @@ import {
 import { resolveAuthSessionTransition } from "../utils/sentryTriagePolicy";
 import { performLocalLogout } from "../utils/logoutFlow";
 import { syncAnalyticsAuth } from "../utils/posthogAnalytics";
+import { isWebAuthShellActive } from "../utils/webAuthShell";
 import { resolveAuthDisplayName } from "../utils/posthogIdentity";
 import {
   canUseNativeGoogleSignIn,
@@ -280,7 +281,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
+  // Logged-out /app already painted its title in the static shell. Waiting on
+// getSession here would hide that title behind the groups skeleton.
+const [loading, setLoading] = useState<boolean>(() => !isWebAuthShellActive());
   const previousAuthUserIdRef = useRef<string | null | undefined>(undefined);
 
   // Helper to update auth state and sync with Sentry

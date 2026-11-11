@@ -139,6 +139,7 @@ import {
   initializePostHog,
 } from "./utils/posthogAnalytics";
 import { enableSpeedInsights } from "./utils/speedInsights";
+import { dismissWebAuthShell } from "./utils/webAuthShell";
 import { ANALYTICS_EVENTS } from "./utils/posthogEvents";
 import {
   createGroupsHomeLoadClock,
@@ -928,6 +929,10 @@ function AppContent() {
       cancelled = true;
     };
   }, [session?.user?.id, hasAcceptedCurrentTerms, openGroupDeepLink]);
+
+  useEffect(() => {
+    if (session) dismissWebAuthShell();
+  }, [session]);
 
   // Debug routing / loading state to track "stuck on spinner" issues.
   // To avoid noisy duplicate breadcrumbs, only log when the state snapshot changes.

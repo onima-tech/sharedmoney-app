@@ -54,6 +54,14 @@ import {
   type BrowserUnavailableAlertAction,
 } from "../utils/socialAuth";
 import { isWhatsAppOtpLoginEnabled } from "../utils/whatsappOtpLogin";
+import {
+  dismissWebAuthShell,
+  isWebAuthShellActive,
+  WEB_AUTH_SHELL_HEADER_HEIGHT,
+  WEB_AUTH_SHELL_LOGO_GAP_PX,
+  WEB_AUTH_SHELL_LOGO_PX,
+  WEB_AUTH_SHELL_TOP_PX,
+} from "../utils/webAuthShell";
 
 type AuthStep = "methods" | "email" | "phone" | "otp";
 type WhatsAppLoadingKind = "send" | "verify" | null;
@@ -217,6 +225,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const isDesktopWeb = isAuthDesktopWebViewport(Platform.OS, width);
+  const [loginShellVisible, setLoginShellVisible] = useState(
+    () => Platform.OS === "web" && isWebAuthShellActive(),
+  );
+  // The HTML title is the mobile LCP element. Keep React from painting a
+  // second copy until the visitor leaves the methods step.
+  const shellOwnsHeader =
+    loginShellVisible && !isDesktopWeb && authStep === "methods" && !isSignUp;
   const socialLoading = googleLoading || appleLoading || Boolean(whatsappLoading);
   const formDisabled = loading || socialLoading;
   const sendButtonLabel =
@@ -234,6 +249,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     ? "Already have an account?"
     : "New to SharedMoney?";
   const accountAction = isSignUp ? "Sign In" : "Create account";
+
+  useEffect(() => {
+    if (!loginShellVisible) return;
+    if (isSignUp || authStep !== "methods") {
+      dismissWebAuthShell();
+      setLoginShellVisible(false);
+    }
+  }, [authStep, isSignUp, loginShellVisible]);
 
   useEffect(() => {
     let mounted = true;
@@ -619,10 +642,20 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
   const renderMethods = () => (
     <View style={styles.methodScreen}>
-      {!isDesktopWeb ? renderLogo("compact") : null}
-      <Text variant="headlineSmall" style={[styles.methodTitle, { color: theme.colors.onBackground }]}>
-        {isSignUp ? "Create your account" : "Log in to SharedMoney"}
-      </Text>
+      {shellOwnsHeader ? (
+        <View
+          style={styles.shellHeaderSlot}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
+        />
+      ) : (
+        <>
+          {!isDesktopWeb ? renderLogo("compact") : null}
+          <Text variant="headlineSmall" style={[styles.methodTitle, { color: theme.colors.onBackground }]}>
+            {isSignUp ? "Create your account" : "Log in to SharedMoney"}
+          </Text>
+        </>
+      )}
 
       <View style={styles.methodStack}>
         {appleSignInAvailable ? (
@@ -1127,7 +1160,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     justifyContent: "flex-start",
     paddingHorizontal: 20,
-    paddingTop: 96,
+    paddingTop: WEB_AUTH_SHELL_TOP_PX,
     paddingBottom: 40,
   },
   desktopScrollContent: {
@@ -1192,9 +1225,13 @@ const styles = StyleSheet.create({
     maxWidth: 342,
   },
   logo: {
-    width: 50,
-    height: 50,
-    marginBottom: 28,
+    width: WEB_AUTH_SHELL_LOGO_PX,
+    height: WEB_AUTH_SHELL_LOGO_PX,
+    marginBottom: WEB_AUTH_SHELL_LOGO_GAP_PX,
+  },
+  shellHeaderSlot: {
+    height: WEB_AUTH_SHELL_HEADER_HEIGHT,
+    width: "100%",
   },
   methodTitle: {
     fontWeight: "700",
