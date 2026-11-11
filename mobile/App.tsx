@@ -69,6 +69,7 @@ import {
   useCreateGroup,
   useRemoveMember,
 } from "./hooks/useGroupMutations";
+import { useDeferUntilIdle } from "./hooks/useDeferUntilIdle";
 import { fetchGroupDetails, useGroupDetails, useGroups } from "./hooks/useGroups";
 import { useProfile } from "./hooks/useProfile";
 import {
@@ -120,8 +121,13 @@ import {
   getConfiguredWebAppPath,
   getInviteLinkErrorMessage,
   isProfileDeepLink,
-  profileWebPath,
 } from "./utils/inviteLinks";
+import {
+  initialRouteFromLocation,
+  resolveAppStartupChrome,
+  routeAfterSessionChange,
+  webHistoryPathForRoute,
+} from "./utils/profileLink";
 import { log, logError } from "./utils/logger";
 import { isBenignConnectivityError } from "./utils/networkErrors";
 import { needsTermsAcceptance } from "./utils/onboardingFlow";
@@ -142,7 +148,7 @@ import {
 } from "./utils/posthogAnalytics";
 import { enableSpeedInsights } from "./utils/speedInsights";
 import { dismissWebAuthShell } from "./utils/webAuthShell";
-import { dismissWebProfileShell } from "./utils/webProfileShell";
+import { dismissWebProfileShell, isWebProfileShellActive } from "./utils/webProfileShell";
 import { ANALYTICS_EVENTS } from "./utils/posthogEvents";
 import {
   createGroupsHomeLoadClock,
@@ -189,14 +195,8 @@ const PENDING_GROUP_DEEP_LINK_KEY = "pending_group_deep_link";
 const PENDING_PROFILE_DEEP_LINK_KEY = "pending_profile_deep_link";
 
 function readInitialRoute(): string {
-  if (
-    Platform.OS === "web" &&
-    typeof window !== "undefined" &&
-    isProfileDeepLink(window.location.href)
-  ) {
-    return "profile";
-  }
-  return "groups";
+  if (Platform.OS !== "web" || typeof window === "undefined") return "groups";
+  return initialRouteFromLocation(window.location.href);
 }
 
 if (Platform.OS === "web") {
@@ -300,7 +300,15 @@ function AppContent() {
     error: profileError,
     refetch: refetchProfile,
   } = useProfile();
-  const notificationInbox = useNotifications();
+  const initialRouteRef = React.useRef(readInitialRoute());
+  const [currentRoute, setCurrentRoute] = useState<string>(initialRouteRef.current);
+  // Groups, rates, and the notification inbox wait until Profile has painted.
+  const profileHomeReleased = useDeferUntilIdle(
+    Platform.OS === "web" && currentRoute === "profile",
+  );
+  const profileQueriesEnabled =
+    currentRoute !== "profile" || profileHomeReleased;
+  const notificationInbox = useNotifications({ enabled: profileQueriesEnabled });
   const notificationFeatureResolved =
     notificationInbox.data?.feature_enabled !== undefined;
   const notificationFeatureEnabled =
@@ -310,9 +318,10 @@ function AppContent() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<Group | null>(null);
   const [showAddMember, setShowAddMember] = useState(false);
-  const [currentRoute, setCurrentRoute] = useState<string>(readInitialRoute);
   /** Defer global /balances until groups list can paint first. */
-  const { data: homeGroups, isLoading: homeGroupsLoading } = useGroups();
+  const { data: homeGroups, isLoading: homeGroupsLoading } = useGroups({
+    enabled: profileQueriesEnabled,
+  });
   // Stamp groups_home_loaded when the wait begins. The list screen often
   // mounts with a warm cache; stamping Date.now() in its ready effect logged 0.
   const homeLoadClockRef = React.useRef(
@@ -335,7 +344,7 @@ function AppContent() {
   }
   const [homeBalancesEnabled, setHomeBalancesEnabled] = useState(false);
   useEffect(() => {
-    if (!session?.user?.id) {
+    if (!session?.user?.id || currentRoute === "profile") {
       setHomeBalancesEnabled(false);
       return;
     }
@@ -345,7 +354,7 @@ function AppContent() {
       setHomeBalancesEnabled(true);
     });
     return () => task.cancel();
-  }, [session?.user?.id, homeGroupsLoading, homeGroups.length]);
+  }, [session?.user?.id, homeGroupsLoading, homeGroups.length, currentRoute]);
   const peopleSettlements = usePeopleSettlements({
     enabled: homeBalancesEnabled || currentRoute === "settlements",
   });
@@ -864,6 +873,8 @@ function AppContent() {
     const userId = session?.user?.id;
     const userEmail = session?.user?.email ?? user?.email;
     if (!userId || !userEmail || !hasAcceptedCurrentTerms) return;
+    // Profile's first paint should not wait on the invitation scan.
+    if (currentRoute === "profile" && !profileHomeReleased) return;
     if (emailInviteJoinsReportedForUserRef.current === userId) return;
 
     let cancelled = false;
@@ -935,6 +946,8 @@ function AppContent() {
     session?.user?.email,
     user?.email,
     hasAcceptedCurrentTerms,
+    currentRoute,
+    profileHomeReleased,
     resolveAnalyticsUserId,
   ]);
 
@@ -1008,26 +1021,17 @@ function AppContent() {
 
   useEffect(() => {
     if (Platform.OS !== "web" || typeof window === "undefined") return;
-    const base = getConfiguredWebAppPath() || "/app";
-    const path = window.location.pathname;
-    if (currentRoute === "profile") {
-      if (!isProfileDeepLink(window.location.href)) {
-        window.history.replaceState(
-          {},
-          "",
-          `${profileWebPath(base)}${window.location.search}${window.location.hash}`,
-        );
-      }
-      return;
-    }
-    if (isProfileDeepLink(path)) {
-      const groupsPath = base.replace(/\/+$/, "") || "/app";
-      window.history.replaceState(
-        {},
-        "",
-        `${groupsPath}${window.location.search}${window.location.hash}`,
-      );
-    }
+    const nextPath = webHistoryPathForRoute({
+      route: currentRoute,
+      appBase: getConfiguredWebAppPath() || "/app",
+      pathname: window.location.pathname,
+      search: window.location.search,
+      hash: window.location.hash,
+    });
+    if (!nextPath) return;
+    const currentPath = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextPath === currentPath) return;
+    window.history.replaceState({}, "", nextPath);
   }, [currentRoute]);
 
   // Debug routing / loading state to track "stuck on spinner" issues.
@@ -1120,7 +1124,10 @@ function AppContent() {
   const updateTx = useUpdateTransaction(onTransactionSuccess);
   const deleteTx = useDeleteTransaction(onTransactionSuccess);
 
-  // Reset navigation state on logout and login (only when session state changes)
+  // Reset navigation on logout, and on a login that did not open Profile.
+  // A signed-in reload of /app/profile restores the session from null and must
+  // stay on Profile. Sending that restore to Groups rewrites the URL to /app
+  // and paints the Groups skeleton before the pending profile link returns.
   useEffect(() => {
     const hadSession = prevSessionRef.current !== null;
     const hasSession = session !== null;
@@ -1133,8 +1140,13 @@ function AppContent() {
       });
     }
 
-    // Only reset when transitioning between logged in/out states
-    if (hadSession !== hasSession) {
+    if (
+      routeAfterSessionChange({
+        hadSession,
+        hasSession,
+        initialRoute: initialRouteRef.current,
+      }) === "groups"
+    ) {
       setCurrentRoute("groups");
       setSelectedGroup(null);
       setShowAddMember(false);
@@ -1428,10 +1440,24 @@ function AppContent() {
     );
   }
 
-  // Keep the Groups layout in place through the auth/profile bootstrap gate.
-  const bootstrapping = loading || (!!session && profileLoading);
-  if (bootstrapping) {
-    if (currentRoute === "groups") {
+  // Groups keeps its skeleton through auth. A signed-in Profile URL paints the
+  // real screen instead, so the settings rows are not waiting on /groups.
+  const startupChrome = resolveAppStartupChrome({
+    route: currentRoute,
+    authLoading: loading,
+    hasSession: !!session,
+    profileLoading,
+    profileShellActive: Platform.OS === "web" && isWebProfileShellActive(),
+    profileFailed: !!profileError,
+    needsTerms: !!profile && needsTermsAcceptance(profile),
+    hasProfile: !!profile,
+  });
+  if (
+    startupChrome === "groups-skeleton" ||
+    startupChrome === "profile-skeleton" ||
+    startupChrome === "spinner"
+  ) {
+    if (startupChrome === "groups-skeleton") {
       return (
         <>
           <GroupsHomeSkeleton />
@@ -1443,7 +1469,7 @@ function AppContent() {
         </>
       );
     }
-    if (currentRoute === "profile") {
+    if (startupChrome === "profile-skeleton") {
       return (
         <>
           <ProfileBootSkeleton />
@@ -1468,7 +1494,7 @@ function AppContent() {
     );
   }
 
-  if (!session) {
+  if (startupChrome === "auth") {
     // Join links land here directly: the token is already stashed and will
     // be redeemed right after sign-in/sign-up (no preview step).
     return (
@@ -1482,7 +1508,7 @@ function AppContent() {
     );
   }
 
-  if (profileError || !profile) {
+  if (startupChrome === "account-error") {
     return (
       <View
         style={[
@@ -1502,7 +1528,7 @@ function AppContent() {
     );
   }
 
-  if (needsTermsAcceptance(profile)) {
+  if (startupChrome === "terms") {
     return (
       <>
         <TermsAcceptanceScreen />

@@ -42,13 +42,15 @@ export async function fetchGroupDetails(groupId: string): Promise<GroupWithMembe
   return response.json();
 }
 
-export function useGroups() {
+export function useGroups(options?: { enabled?: boolean }) {
   const { user } = useAuth();
   const queryClient = useQueryClient();
+  const enabled = options?.enabled !== false && !!user?.id;
 
   // Warm RQ from AsyncStorage so cold start can skip the empty-list spinner.
+  // Skip the read while a Profile visit is holding groups work off the critical path.
   useEffect(() => {
-    if (!user?.id) return;
+    if (!enabled || !user?.id) return;
     let cancelled = false;
     void readGroupsCache(user.id).then((cached) => {
       if (cancelled || !cached?.length) return;
@@ -60,7 +62,7 @@ export function useGroups() {
     return () => {
       cancelled = true;
     };
-  }, [user?.id, queryClient]);
+  }, [enabled, user?.id, queryClient]);
 
   const query = useQuery<Group[], Error>({
     queryKey: queryKeys.groups,
@@ -69,7 +71,7 @@ export function useGroups() {
       if (user?.id) writeGroupsCache(user.id, groups);
       return groups;
     },
-    enabled: !!user?.id,
+    enabled,
     staleTime: 60_000,
     gcTime: 1000 * 60 * 60 * 24,
   });

@@ -158,7 +158,11 @@ function isMissingEndpointError(error: unknown): boolean {
   );
 }
 
-export function useCurrencyPreferences(groupId?: string) {
+export function useCurrencyPreferences(
+  groupId?: string,
+  options?: { fetchSharedData?: boolean },
+) {
+  const fetchSharedData = options?.fetchSharedData !== false;
   const { user } = useAuth();
   const queryClient = useQueryClient();
   const [prefs, setPrefs] = useState<CurrencyPreferences>(
@@ -192,7 +196,7 @@ export function useCurrencyPreferences(groupId?: string) {
   }, []);
 
   const { data: profile } = useProfile();
-  const { data: groups } = useGroups();
+  const { data: groups } = useGroups({ enabled: fetchSharedData });
   const groupDetailsQuery = useQuery({
     queryKey: groupId ? queryKeys.group(groupId) : queryKeys.group(""),
     queryFn: () => fetchGroupDetails(groupId as string),
@@ -205,7 +209,7 @@ export function useCurrencyPreferences(groupId?: string) {
   const marketRatesQuery = useQuery({
     queryKey: queryKeys.marketRates,
     queryFn: () => fetchRates(),
-    enabled: !!user?.id,
+    enabled: !!user?.id && fetchSharedData,
     staleTime: 60 * 60 * 1000,
   });
 

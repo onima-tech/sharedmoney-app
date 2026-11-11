@@ -31,9 +31,9 @@ export type UsePeopleSettlementsOptions = {
 export function usePeopleSettlements(options?: UsePeopleSettlementsOptions) {
   const { user } = useAuth();
   const enabled = options?.enabled !== false;
-  const groupsQuery = useGroups();
+  const groupsQuery = useGroups({ enabled });
   const balancesQuery = useBalances(undefined, { enabled });
-  const currency = useCurrencyPreferences();
+  const currency = useCurrencyPreferences(undefined, { fetchSharedData: enabled });
 
   const unifyGroupIds = useMemo(() => {
     if (!enabled) return [] as string[];
