@@ -93,17 +93,18 @@ export function setCachedNotificationPreference(
   );
 }
 
-export function useNotifications() {
+export function useNotifications(options?: { enabled?: boolean }) {
   const { user } = useAuth();
   const userId = user?.id ?? null;
+  const enabled = !!userId && options?.enabled !== false;
   const query = useInfiniteQuery({
     queryKey: queryKeys.notifications(userId),
     queryFn: ({ pageParam }) => fetchNotificationsPage(userId!, pageParam),
     initialPageParam: null as NotificationCursor | null,
     getNextPageParam: (lastPage) => lastPage.has_more ? lastPage.next_cursor : null,
-    enabled: !!userId,
+    enabled,
     staleTime: 30_000,
-    refetchInterval: 60_000,
+    refetchInterval: enabled ? 60_000 : false,
     select: (data): NotificationsView => ({
       ...data,
       ...flattenNotificationPages(data)!,

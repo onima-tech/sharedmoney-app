@@ -38,6 +38,7 @@ import {
   useThemePreference,
 } from "../contexts/ThemePreferenceContext";
 import { useCurrencyPreferences } from "../hooks/useCurrencyPreferences";
+import { useDeferUntilIdle } from "../hooks/useDeferUntilIdle";
 import { useDeleteAccount } from "../hooks/useDeleteAccount";
 import { useProfile } from "../hooks/useProfile";
 import { CURRENCIES, getCurrencyName } from "../utils/currency";
@@ -115,11 +116,16 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
   const insets = useSafeAreaInsets();
   const { data: profile, updateProfile } = useProfile();
   const shellOwnsHero = Platform.OS === "web" && isWebProfileShellActive();
-  const { preferredCurrency, setPreferredCurrency } = useCurrencyPreferences();
+  // Rates and the notification inbox start after the settings labels paint.
+  const profileQueriesReady = useDeferUntilIdle(Platform.OS === "web");
+  const { preferredCurrency, setPreferredCurrency } = useCurrencyPreferences(undefined, {
+    fetchSharedData: profileQueriesReady,
+  });
   const [showPreferredCurrencyPicker, setShowPreferredCurrencyPicker] = useState(false);
-  const notifications = useNotifications();
+  const notifications = useNotifications({ enabled: profileQueriesReady });
   const notificationsEnabled =
     isTransactionNotificationsEnabled(notifications.data);
+  const profileFieldsLocked = loading || !profile;
   const { signOut, user } = useAuth();
   const deleteAccount = useDeleteAccount();
 
@@ -446,7 +452,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
               value={fullName}
               onChangeText={setFullName}
               mode="outlined"
-              disabled={loading}
+              disabled={profileFieldsLocked}
               style={styles.input}
               left={<TextInput.Icon icon="account" />}
               placeholder="Enter your full name"
@@ -456,7 +462,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
             <View style={styles.phoneInputWrapper}>
               <TouchableOpacity
                 onPress={() => setShowCountryPicker(true)}
-                disabled={loading}
+                disabled={profileFieldsLocked}
                 activeOpacity={0.7}
                 style={[
                   styles.countryCodeSelector,
@@ -484,7 +490,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
                 value={phoneNumber}
                 onChangeText={setPhoneNumber}
                 mode="outlined"
-                disabled={loading}
+                disabled={profileFieldsLocked}
                 style={[styles.input, styles.phoneInput]}
                 placeholder="Enter your phone number"
                 keyboardType="phone-pad"
@@ -497,7 +503,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
               isIndiaNumber={selectedCountry.dialCode === "+91"}
               value={whatsappReminders}
               saveState={whatsappSaveState}
-              disabled={loading}
+              disabled={profileFieldsLocked}
               onValueChange={handleWhatsappRemindersChange}
             />
 
@@ -512,7 +518,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
                 setUpiIdError(getOptionalUpiIdFormatError(upiId) || "");
               }}
               mode="outlined"
-              disabled={loading}
+              disabled={profileFieldsLocked}
               error={!!upiIdError}
               style={styles.input}
               left={<TextInput.Icon icon="bank" />}
@@ -638,7 +644,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
               testID="profile-one-time-bills"
               accessibilityRole="button"
               accessibilityLabel="One-time bills"
-              disabled={loading}
+              disabled={profileFieldsLocked}
               onPress={() => {
                 if (onOpenOneTimeBills) onOpenOneTimeBills();
                 else setShowOneTimeBills(true);
@@ -648,7 +654,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
                 {
                   // No top hairline — this row is not a divided settings stack item.
                   borderTopWidth: 0,
-                  opacity: loading ? 0.5 : 1,
+                  opacity: profileFieldsLocked ? 0.5 : 1,
                 },
               ]}
             >
@@ -789,7 +795,7 @@ export const ProfileSetupScreen: React.FC<ProfileSetupScreenProps> = ({
               accessibilityRole="button"
               accessibilityLabel="Email SharedMoney support"
               accessibilityHint="Choose a support topic before opening an email"
-              disabled={loading}
+              disabled={profileFieldsLocked}
               onPress={() => setSupportSheetVisible(true)}
               style={[
                 styles.supportButton,
