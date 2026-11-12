@@ -40,7 +40,9 @@ import { getSeenGroupIds, markGroupSeen } from "../utils/seenGroups";
 import { partitionGroupsBySection } from "../utils/groupListSections";
 import { recordSentryListCounts } from "../utils/sentryTelemetry";
 import { balanceAmountColor, groupListBalanceWords } from "../utils/balanceRowLabels";
-import { formatCurrency } from "../utils/currency";
+import { groupsListStatusLine } from "../utils/groupsListStatus";
+import { isBenignConnectivityError } from "../utils/networkErrors";
+import { formatShareCurrency } from "../utils/settleShareMessage";
 import {
   listRecentBillSplits,
   summarizeUnsettledOneTimeBills,
@@ -64,6 +66,27 @@ interface GroupsListScreenProps {
   homeLoadStartedAtMs: number;
   /** Groups query was in the empty loading state during this visit. */
   homeSawInitialLoading: boolean;
+}
+
+function useIsOffline(): boolean {
+  const [offline, setOffline] = useState(
+    () => typeof navigator !== "undefined" && navigator.onLine === false,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.addEventListener !== "function") {
+      return;
+    }
+    const goOnline = () => setOffline(false);
+    const goOffline = () => setOffline(true);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    setOffline(typeof navigator !== "undefined" && navigator.onLine === false);
+    return () => {
+      window.removeEventListener("online", goOnline);
+      window.removeEventListener("offline", goOffline);
+    };
+  }, []);
+  return offline;
 }
 
 export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
@@ -95,6 +118,7 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
   const [pushError, setPushError] = useState<string | null>(null);
   const [enablingPush, setEnablingPush] = useState(false);
   const { data: groups, isLoading: loading, error, refetch } = useGroups();
+  const deviceOffline = useIsOffline();
   // Share App's deferred all-balances enablement: wait for list paint, then badges.
   useEffect(() => {
     if (loading && groups.length === 0) return;
@@ -220,6 +244,13 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
   }, [error, signOut]);
 
   const isInitialLoading = loading && groups.length === 0;
+  const sessionExpired = !!error && isSessionExpiredError(error);
+  const offline = deviceOffline || (!!error && !sessionExpired && isBenignConnectivityError(error));
+  const listStatus = groupsListStatusLine({
+    offline,
+    hasSavedGroups: groups.length > 0,
+    hasError: !!error && !sessionExpired,
+  });
 
   const { activeGroups, archivedGroups, formerGroups } =
     partitionGroupsBySection(groups);
@@ -345,46 +376,19 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
     }
 
     return (
-      <Surface
+      <View
         key={group.id}
         style={[
           styles.groupItem,
-          { backgroundColor: theme.colors.surface },
+          { borderBottomColor: theme.colors.outlineVariant },
         ]}
-        elevation={0}
       >
         {row}
-      </Surface>
+      </View>
     );
   };
 
-  if (error) {
-    // Don't show Retry button for session expiration - user will be signed out automatically
-    if (isSessionExpiredError(error)) {
-      return (
-        <View
-          style={[
-            styles.centerContainer,
-            { backgroundColor: theme.colors.background },
-          ]}
-        >
-          <Text
-            variant="headlineSmall"
-            style={{ color: theme.colors.error, marginBottom: 16 }}
-          >
-            Session Expired
-          </Text>
-          <Text
-            variant="bodyMedium"
-            style={{ marginBottom: 24, textAlign: "center" }}
-          >
-            {getUserFriendlyErrorMessage(error)}
-          </Text>
-          <ActivityIndicator size="small" />
-        </View>
-      );
-    }
-
+  if (sessionExpired) {
     return (
       <View
         style={[
@@ -396,7 +400,7 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
           variant="headlineSmall"
           style={{ color: theme.colors.error, marginBottom: 16 }}
         >
-          Error
+          Session Expired
         </Text>
         <Text
           variant="bodyMedium"
@@ -404,9 +408,7 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
         >
           {getUserFriendlyErrorMessage(error)}
         </Text>
-        <Button mode="contained" onPress={() => refetch()}>
-          Retry
-        </Button>
+        <ActivityIndicator size="small" />
       </View>
     );
   }
@@ -427,6 +429,32 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
           />
         ) : null}
       </Appbar.Header>
+
+      {listStatus ? (
+        <Text
+          variant="bodySmall"
+          testID={listStatus.kind === "offline" ? "groups-offline-line" : "groups-refresh-error"}
+          style={{ color: theme.colors.onSurfaceVariant, paddingHorizontal: 16, paddingTop: 8, paddingBottom: 4 }}
+        >
+          {listStatus.kind === "offline" ? listStatus.text : (
+            <>
+              Couldn’t refresh ·{" "}
+              <Text
+                variant="bodySmall"
+                onPress={() => {
+                  void refetch();
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Retry loading groups"
+                testID="groups-refresh-retry"
+                style={{ color: theme.colors.primary, fontWeight: "600" }}
+              >
+                Retry
+              </Text>
+            </>
+          )}
+        </Text>
+      ) : null}
 
       {isInitialLoading ? (
         <ScrollView
@@ -490,7 +518,7 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
               </View>
             </Surface>
           ) : null}
-          {!hasAnyVisibleGroups ? (
+          {!hasAnyVisibleGroups && !listStatus ? (
             <View style={styles.emptyContainer} testID="groups-empty-state">
               <Text
                 variant="bodyLarge"
@@ -545,9 +573,8 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
 
               {/* Quiet one-time bills row — after active groups, above Archived/Former. */}
               {oneTimeSummary ? (
-                <Surface
-                  style={[styles.groupItem, { backgroundColor: theme.colors.surface, marginTop: 4 }]}
-                  elevation={0}
+                <View
+                  style={[styles.groupItem, { borderBottomColor: theme.colors.outlineVariant, marginTop: 4 }]}
                 >
                   <TouchableOpacity
                     testID="one-time-bills-row"
@@ -561,7 +588,7 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
                         : `${oneTimeSummary.unsettled_count} unsettled`
                     }, ${groupListBalanceWords(
                       oneTimeSummary.net_minor / 100,
-                      formatCurrency(Math.abs(oneTimeSummary.net_minor) / 100, oneTimeSummary.currency),
+                      formatShareCurrency(Math.abs(oneTimeSummary.net_minor) / 100, oneTimeSummary.currency),
                     )}`}
                   >
                     <View style={[styles.groupMainContent, expandedText && styles.groupMainContentExpanded]}>
@@ -606,7 +633,7 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
                       >
                         {groupListBalanceWords(
                           oneTimeSummary.net_minor / 100,
-                          formatCurrency(
+                          formatShareCurrency(
                             Math.abs(oneTimeSummary.net_minor) / 100,
                             oneTimeSummary.currency,
                           ),
@@ -614,7 +641,7 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
                       </Text>
                     </View>
                   </TouchableOpacity>
-                </Surface>
+                </View>
               ) : null}
 
               {/* Archived + Former share one disclosure: header card, inset icon,
@@ -742,7 +769,7 @@ export function GroupsHomeSkeletonRows({ embedded = false }: { embedded?: boolea
   const rows = (
     <SkeletonGroup>
       {[0, 1, 2, 3, 4, 5].map((key) => (
-        <Surface key={key} style={[styles.groupItem, { backgroundColor: theme.colors.surface }]} elevation={0}>
+        <View key={key} testID="group-skeleton-row" style={[styles.groupItem, { borderBottomColor: theme.colors.outlineVariant }]}>
           <View style={[styles.groupTouchable, expandedText && styles.groupTouchableExpanded]}>
             <View style={[styles.groupMainContent, expandedText && styles.groupMainContentExpanded]}>
               <View style={styles.groupInfo}>
@@ -760,7 +787,7 @@ export function GroupsHomeSkeletonRows({ embedded = false }: { embedded?: boolea
               <Skeleton width="100%" height={12} />
             </View>
           </View>
-        </Surface>
+        </View>
       ))}
     </SkeletonGroup>
   );
@@ -837,8 +864,7 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   groupItem: {
-    marginBottom: 9,
-    borderRadius: 14,
+    borderBottomWidth: StyleSheet.hairlineWidth,
     overflow: "hidden",
   },
   groupTouchable: {

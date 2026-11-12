@@ -2,7 +2,6 @@ import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import React, { useEffect, useMemo, useState } from "react";
 import { StyleSheet, useWindowDimensions, View } from "react-native";
 import {
-  Surface,
   Text,
   TouchableRipple,
   useTheme
@@ -12,28 +11,24 @@ import { resolveGroupDashboardSlots } from "../utils/groupDashboardReservation";
 import { Balance, GroupStatsResponse, Participant } from "../types";
 import { UnifyPromptCard } from "./UnifyPromptCard";
 import { useCurrencyPreferences } from "../hooks/useCurrencyPreferences";
-import { formatCurrency, getDefaultCurrency } from "../utils/currency";
+import { getDefaultCurrency } from "../utils/currency";
 import {
   collectCurrencies,
-  formatDisplayTotals,
   isMultiCurrency,
   unifyBalances,
   simplifyUnifiedDebts,
 } from "../utils/currencyMerge";
 import { simplifyDebts } from "../utils/debt";
-import {
-  currenciesFromGroupStats,
-  spendingTotalsFromGroupStats,
-} from "../utils/groupDashboardStats";
+import { currenciesFromGroupStats } from "../utils/groupDashboardStats";
 import {
   buildSettleSummaryMessage,
+  formatShareCurrency,
   settleSharePersonName,
   type SettleSummaryEdge,
 } from "../utils/settleShareMessage";
 import {
   findParticipantForBalance,
   resolveSettlementPresence,
-  settlementCounterpartyDisplayName,
   settlementCounterpartyShortName,
   settlementPresenceCaption,
   type SettlementPresence,
@@ -66,9 +61,9 @@ interface GroupDashboardProps {
   onSettlePress?: (balance: Balance) => void;
   /** Reports whether a non-empty group settle-up summary can be shared. */
   onShareSummaryChange?: (payload: GroupShareSummaryPayload | null) => void;
-  onMyCostsPress?: () => void;
-  onTotalCostsPress?: () => void;
   onOpenCurrencySettings?: () => void;
+  /** Retries the balances request from the number area. */
+  onBalancesRetry?: () => void;
   /**
    * Non-former participant count (incl. people without accounts / pending invites).
    * Used for calm solo chrome vs settle slot visibility.
@@ -82,22 +77,6 @@ interface GroupDashboardProps {
   participants?: Participant[];
   /** Synchronous fallback when effective cached currency settings are absent. */
   unifyBalances?: boolean;
-}
-
-function initialsFromDisplayName(displayName: string): string {
-  const name = displayName.trim();
-  if (name.includes(" ")) {
-    const parts = name.split(/\s+/).filter(Boolean);
-    if (parts.length >= 2) {
-      return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-    }
-  }
-  if (name.length >= 2 && name !== "Someone") {
-    return name.substring(0, 2).toUpperCase();
-  }
-  return name.length > 0 && name !== "Someone"
-    ? (name[0] + name[0]).toUpperCase()
-    : "??";
 }
 
 function presenceForBalance(
@@ -126,9 +105,8 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
   defaultCurrency = getDefaultCurrency(),
   onSettlePress,
   onShareSummaryChange,
-  onMyCostsPress,
-  onTotalCostsPress,
   onOpenCurrencySettings,
+  onBalancesRetry,
   activeMemberCount = 2,
   membersKnown = true,
   hasNonZeroBalance = false,
@@ -136,8 +114,7 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
   unifyBalances: groupUnifyBalances,
 }) => {
   const theme = useTheme();
-  const { width, fontScale } = useWindowDimensions();
-  const stackInsights = width / fontScale < 300;
+  const { fontScale } = useWindowDimensions();
   const {
     preferredCurrency,
     groupSettings,
@@ -159,9 +136,6 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
   // Height the loading reservation actually painted; loaded content keeps it
   // as a floor for this mount so a short "All settled" line cannot pull the ledger up.
   const [reservedSettlementHeight, setReservedSettlementHeight] = useState(0);
-  // Match the two-line currency breakdown in the existing cards; allow larger
-  // content and Dynamic Type to grow rather than clipping financial amounts.
-  const insightMinHeight = 110 * fontScale;
   // These minimums size visible content only. Frozen loading reservations must
   // not leave blank slots when authoritative membership/preferences arrive.
   const currencyHeaderStyle = [styles.unifiedSubhead, {
@@ -231,30 +205,6 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
     })), settlementCurrency, rateBook);
   }, [balances, currentUserId, currentUserParticipantId, myDebts, unifyEnabled, settlementCurrency, rateBook]);
 
-  const { myCostTotal, groupCostTotal } = useMemo(
-    () => spendingTotalsFromGroupStats(groupStats),
-    [groupStats]
-  );
-
-  const myCostDisplay = useMemo(
-    () => formatDisplayTotals(myCostTotal, {
-      unifyEnabled,
-      settlementCurrency,
-      rateBook,
-      defaultCurrency,
-    }),
-    [myCostTotal, unifyEnabled, settlementCurrency, rateBook, defaultCurrency]
-  );
-  const groupCostDisplay = useMemo(
-    () => formatDisplayTotals(groupCostTotal, {
-      unifyEnabled,
-      settlementCurrency,
-      rateBook,
-      defaultCurrency,
-    }),
-    [groupCostTotal, unifyEnabled, settlementCurrency, rateBook, defaultCurrency]
-  );
-
   // Group net balances are not debts to the viewer. Use the same viewer-involved
   // settlement edges as the unified view, retaining each edge's currency/amount.
   const viewerBalances = useMemo(() => myDebts.map((edge): Balance => {
@@ -274,8 +224,7 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
 
 
   const formatSignedBalance = (amount: number, currency: string, isOwed: boolean) => {
-    const raw = formatCurrency(Math.abs(amount), currency);
-    const bare = raw.replace(/^[+-]/, "");
+    const bare = formatShareCurrency(Math.abs(amount), currency);
     return isOwed ? `+${bare}` : `-${bare}`;
   };
 
@@ -347,9 +296,20 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
   const renderSettlementRows = () => {
     if (balanceError) {
       return (
-        <View style={styles.settlementStatus}>
+        <View style={styles.settlementStatus} testID="balances-error-line">
           <Text accessibilityLiveRegion="polite" variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-            Couldn't load balances. Reopen the group to try again.
+            Couldn’t load balances
+            {" · "}
+            <Text
+              variant="bodySmall"
+              onPress={onBalancesRetry}
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading balances"
+              testID="balances-error-retry"
+              style={{ color: theme.colors.primary, fontWeight: "600" }}
+            >
+              Retry
+            </Text>
           </Text>
         </View>
       );
@@ -377,7 +337,6 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
 
     return settlementRows.map((balance, index) => {
       const isOwed = balance.amount > 0;
-      const displayName = settlementCounterpartyDisplayName(balance, participants);
       const name = settlementCounterpartyShortName(balance, participants);
       const presence = presenceForBalance(balance, participants);
       const presenceCaption = settlementPresenceCaption(presence);
@@ -400,7 +359,10 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
         ? theme.colors.onSurfaceVariant
         : theme.colors.onSurface;
       return (
-        <View key={`${rowKey}-${currency}-${index}`}>
+        <View
+          key={`${rowKey}-${currency}-${index}`}
+          style={{ borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: theme.colors.outlineVariant }}
+        >
           <Row
             testID={`settlement-row-${rowKey}-${currency}`}
             onPress={onSettlePress ? () => onSettlePress(balance) : undefined}
@@ -412,29 +374,6 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
           >
             {/* Avatar + chevron centre on the full (1- or 2-line) block. */}
             <View style={styles.settlementRowContent}>
-              <View
-                accessible={false}
-                style={[
-                  styles.settlementAvatar,
-                  {
-                    backgroundColor: isFormer
-                      ? theme.colors.surfaceVariant
-                      : theme.colors.primaryContainer,
-                  },
-                ]}
-              >
-                <Text
-                  style={{
-                    color: isFormer
-                      ? theme.colors.onSurfaceVariant
-                      : theme.colors.onPrimaryContainer,
-                    fontWeight: "600",
-                    fontSize: 13,
-                  }}
-                >
-                  {initialsFromDisplayName(displayName)}
-                </Text>
-              </View>
               {/*
                 Line 1: name (only shrink) + owes you + amount (flexShrink 0).
                 Line 2 (no-account / invited only): muted caption.
@@ -536,52 +475,6 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
     });
   };
 
-  const renderCompactInsights = () => (
-    <View style={[styles.compactStatsRow, stackInsights && styles.stackedStats]}>
-      <Surface style={[styles.compactStat, { minHeight: insightMinHeight, backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]} elevation={0}>
-        <TouchableRipple onPress={onMyCostsPress} style={{ flex: 1 }}>
-          <View style={[styles.compactStatContent, { minHeight: insightMinHeight - 2 }]}>
-            <View style={[styles.miniIcon, { backgroundColor: theme.colors.surfaceVariant }]}>
-              <MaterialCommunityIcons name="wallet" size={18} color={theme.colors.onSurfaceVariant} />
-            </View>
-            <View style={{ flex: 1 }}>
-                <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>My spending</Text>
-                <Text variant="titleSmall" style={{ color: theme.colors.onSurface, fontWeight: '600' }}>
-                    {dashboardLoading ? "..." : myCostDisplay.headline}
-                </Text>
-                {!dashboardLoading && myCostDisplay.breakdown ? (
-                  <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                    from {myCostDisplay.breakdown}
-                  </Text>
-                ) : null}
-            </View>
-          </View>
-        </TouchableRipple>
-      </Surface>
-
-      <Surface style={[styles.compactStat, { minHeight: insightMinHeight, backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]} elevation={0}>
-        <TouchableRipple onPress={onTotalCostsPress} style={{ flex: 1 }}>
-          <View style={[styles.compactStatContent, { minHeight: insightMinHeight - 2 }]}>
-             <View style={[styles.miniIcon, { backgroundColor: theme.colors.surfaceVariant }]}>
-              <MaterialCommunityIcons name="chart-pie" size={18} color={theme.colors.onSurfaceVariant} />
-            </View>
-            <View style={{ flex: 1 }}>
-                <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>Group summary</Text>
-                <Text variant="titleSmall" style={{ color: theme.colors.onSurface, fontWeight: '600' }}>
-                    {dashboardLoading ? "..." : groupCostDisplay.headline}
-                </Text>
-                {!dashboardLoading && groupCostDisplay.breakdown ? (
-                  <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
-                    from {groupCostDisplay.breakdown}
-                  </Text>
-                ) : null}
-            </View>
-          </View>
-        </TouchableRipple>
-      </Surface>
-    </View>
-  );
-
   if ((dashboardLoading || !currentUserId) && !balanceError) {
     return (
       <SkeletonGroup style={styles.container} testID="group-dashboard-skeleton">
@@ -592,35 +485,17 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
         {reservation.settlement ? <View style={settlementSlotStyle}
           onLayout={(e) => setReservedSettlementHeight(e.nativeEvent.layout.height)}>
           {/* Mirrors the outstanding-balance card so loaded debts do not push the ledger. */}
-          <Surface elevation={0} testID="group-settlement-skeleton"
-            style={[styles.settlementList, { borderColor: theme.colors.outlineVariant, backgroundColor: theme.colors.surface }]}>
-            <View style={styles.settlementRow}>
+          <View testID="group-settlement-skeleton" style={styles.settlementList}>
+            <View style={[styles.settlementRow, { borderBottomColor: theme.colors.outlineVariant }]}>
               <View style={styles.settlementRowContent}>
-                <View style={{ marginRight: 12 }}><Skeleton width={36} height={36} borderRadius={18} /></View>
                 <View style={[styles.settlementDetails, { justifyContent: "space-between" }]}>
                   <Skeleton width={104} height={14} />
                   <Skeleton width={72} height={16} />
                 </View>
               </View>
             </View>
-          </Surface>
+          </View>
         </View> : null}
-        <View style={[styles.compactStatsRow, stackInsights && styles.stackedStats]}>
-          {[0, 1].map((key) => (
-            <Surface key={key} elevation={0} testID="group-stat-skeleton"
-              style={[styles.compactStat, { minHeight: insightMinHeight, backgroundColor: theme.colors.surface, borderColor: theme.colors.outlineVariant }]}>
-              <View style={[styles.compactStatContent, { minHeight: insightMinHeight - 2 }]}>
-                <Skeleton width={32} height={32} borderRadius={16} />
-                <View style={{ flex: 1, gap: 8 }}>
-                  <Skeleton width="90%" height={12} />
-                  <Skeleton width="100%" height={18} />
-                  <Skeleton width="85%" height={12} />
-                  <Skeleton width="70%" height={12} />
-                </View>
-              </View>
-            </Surface>
-          ))}
-        </View>
       </SkeletonGroup>
     );
   }
@@ -649,18 +524,6 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
         <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>
           {`In one currency · ${settlementCurrency}`}
         </Text>
-        {onOpenCurrencySettings ? (
-          <TouchableRipple
-            onPress={onOpenCurrencySettings}
-            accessibilityRole="button"
-            accessibilityLabel="Rates"
-            testID="group-rates-button"
-          >
-            <Text variant="labelLarge" style={{ color: theme.colors.primary, fontWeight: "600" }}>
-              Rates ›
-            </Text>
-          </TouchableRipple>
-        ) : null}
       </View> : null}
 
       {contentSlots.settlement ? <View style={[settlementSlotStyle,
@@ -668,13 +531,9 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
         {isSettled ? (
           <View testID="group-settlement-rows">{renderSettlementRows()}</View>
         ) : (
-          <Surface
-            style={[styles.settlementList, { borderColor: theme.colors.outlineVariant, backgroundColor: theme.colors.surface }]}
-            elevation={0}
-            testID="group-settlement-rows"
-          >
+          <View style={styles.settlementList} testID="group-settlement-rows">
             {renderSettlementRows()}
-          </Surface>
+          </View>
         )}
       </View> : null}
 
@@ -689,8 +548,6 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
             : `No ${myUnified.missing.join(", ")} → ${settlementCurrency} rate. Original balances remain below the converted rows.`}
         </Text>
       ) : null}
-
-      {renderCompactInsights()}
     </View>
   );
 };
@@ -698,9 +555,9 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
 const styles = StyleSheet.create({
   container: {
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 8,
-    gap: 16,
+    paddingTop: 4,
+    paddingBottom: 4,
+    gap: 8,
   },
   unifiedSubhead: {
     flexDirection: "row",
@@ -709,12 +566,10 @@ const styles = StyleSheet.create({
     marginBottom: -4,
   },
   settlementList: {
-    borderRadius: 8,
-    borderWidth: 1,
     overflow: "hidden",
   },
   settlementRow: {
-    minHeight: 60,
+    minHeight: 48,
   },
   settlementNameRow: {
     flexDirection: "row",
@@ -758,9 +613,9 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   settlementStatus: {
-    paddingVertical: 16,
-    paddingHorizontal: 14,
-    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 0,
+    alignItems: "flex-start",
   },
 
   compactStatsRow: {

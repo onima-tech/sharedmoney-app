@@ -96,7 +96,7 @@ test("group list non-zero balance uses owed/owe words without Settled or bare +/
     currentUserId: "me",
   });
   assert.doesNotMatch(text(owed), /Settled|Even/i);
-  assert.match(text(owed), /You're owed \$24\.00/);
+  assert.match(text(owed), /You're owed \$24$/);
   assert.doesNotMatch(text(owed), /^\+|−|-/);
   assert.equal(nodes(owed).some((n) => n.props?.testID === "group-balance-amount"), true);
 

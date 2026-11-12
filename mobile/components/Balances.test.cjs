@@ -119,8 +119,8 @@ test("dashboard creditor sees Alice owes you, not the viewer's own net row", () 
   assert.doesNotMatch(text(tree), /You owes you|You owe Alice/);
   const rows = settlementRows(tree);
   assert.equal(rows.length, 1);
-  assert.match(text(rows[0]), /\+\$50\.00/);
-  assert.equal(rows[0].props.accessibilityLabel, "Alice owes you, +$50.00");
+  assert.match(text(rows[0]), /\+\$50(?!\.00)/);
+  assert.equal(rows[0].props.accessibilityLabel, "Alice owes you, +$50");
   assert.equal(rows[0].props.accessibilityRole, "button");
 });
 test("dashboard debtor sees You owe Alice, never Alice owes you", () => {
@@ -129,14 +129,14 @@ test("dashboard debtor sees You owe Alice, never Alice owes you", () => {
   assert.doesNotMatch(text(tree), /Alice owes you|You owe You/);
   const rows = settlementRows(tree);
   assert.equal(rows.length, 1);
-  assert.match(text(rows[0]), /-\$50\.00/);
+  assert.match(text(rows[0]), /-\$50(?!\.00)/);
 });
 test("dashboard uses the viewer's edge amount, not the counterparty's group net", () => {
   const tree = dashboard([balance("me", 20), balance("Alice", -100), balance("Bob", 80)]);
   assert.match(text(tree), /Alice owes you/);
   const rows = settlementRows(tree);
   assert.equal(rows.length, 1);
-  assert.match(text(rows[0]), /\+\$20\.00/);
+  assert.match(text(rows[0]), /\+\$20(?!\.00)/);
   assert.doesNotMatch(text(rows[0]), /100|80/);
 });
 test("dashboard recognizes viewer by participant id and keeps edge currencies", () => {
@@ -148,8 +148,8 @@ test("dashboard recognizes viewer by participant id and keeps edge currencies", 
   assert.match(text(tree), /You owe Bob/);
   const rows = settlementRows(tree);
   assert.equal(rows.length, 2);
-  assert.match(text(byId(tree, "group-settlement-rows")), /\+\$50\.00/);
-  assert.match(text(byId(tree, "group-settlement-rows")), /-€30\.00/);
+  assert.match(text(byId(tree, "group-settlement-rows")), /\+\$50(?!\.00)/);
+  assert.match(text(byId(tree, "group-settlement-rows")), /-€30(?!\.00)/);
   assert.doesNotMatch(text(byId(tree, "group-settlement-rows")), /80\.00|20\.00/);
 });
 
@@ -165,9 +165,9 @@ test("dashboard unification renders compact viewer-involved rows in the settleme
   const rows = settlementRows(tree);
   assert.equal(rows.length, 1);
   assert.match(text(rows[0]), /Alice owes you/);
-  assert.match(text(rows[0]), /\+\$25\.00/);
+  assert.match(text(rows[0]), /\+\$25(?!\.00)/);
   assert.match(text(tree), /In one currency · USD/);
-  assert.match(text(tree), /Rates ›/);
+  assert.doesNotMatch(text(tree), /Rates ›/);
   assert.equal(nodes(tree).some(node => node.type === "UnifiedBalanceHero"), false);
 });
 
@@ -185,8 +185,8 @@ test("dashboard unification preserves original-currency missing-rate leftovers w
   const leftover = rows.find(r => text(r).includes("Cara"));
   assert.ok(converted);
   assert.ok(leftover);
-  assert.match(text(converted), /₹4,150\.00/);
-  assert.match(text(leftover), /£20\.00/);
+  assert.match(text(converted), /₹4,150(?!\.00)/);
+  assert.match(text(leftover), /£20(?!\.00)/);
   assert.match(text(leftover), /Not converted · GBP/);
   assert.match(text(tree), /No GBP → INR rate/);
   assert.doesNotMatch(text(tree), /All settled/);
@@ -225,9 +225,9 @@ test("dashboard unification preserves greedy simplification with multiple counte
   const rows = settlementRows(tree);
   assert.equal(rows.length, 2);
   assert.match(text(rows[0]), /Bob owes you/);
-  assert.match(text(rows[0]), /₹4,980\.00/);
+  assert.match(text(rows[0]), /₹4,980(?!\.00)/);
   assert.match(text(rows[1]), /Charlie owes you/);
-  assert.match(text(rows[1]), /₹3,320\.00/);
+  assert.match(text(rows[1]), /₹3,320(?!\.00)/);
 });
 test("dashboard does not label third-party debts as debts to the viewer", () => {
   const tree = dashboard([balance("me", 0), balance("Alice", -50), balance("Bob", 50)]);
@@ -409,14 +409,14 @@ test("former counterparty keeps Former styling on settle row", () => {
   assert.match(text(tree), /Alex/);
 });
 
-test("dashboard reserves settlement and both stat cards while balances load", () => {
+test("dashboard reserves the settlement row and not spending cards while balances load", () => {
   for (const loading of [{ loading: true }, { statsLoading: true }]) {
     const tree = dashboard([balance("me", 50), balance("Alice", -50)], loading);
     assert.equal(settlementRows(tree).length, 0);
     assert.ok(byId(tree, "group-dashboard-skeleton"));
     assert.ok(byId(tree, "group-settlement-skeleton"));
-    assert.equal(nodes(tree).filter(n => n.props.testID === "group-stat-skeleton").length, 2);
-    assert.doesNotMatch(text(tree), /Updating balances|Alice owes you|All settled|\$50/);
+    assert.equal(nodes(tree).filter(n => n.props.testID === "group-stat-skeleton").length, 0);
+    assert.doesNotMatch(text(tree), /My spending|Group summary|Updating balances|Alice owes you|All settled|\$50/);
   }
 });
 
@@ -433,20 +433,13 @@ test("settled unified dashboard keeps the same region geometry as its skeleton a
     const pendingSubhead = React.Children.toArray(skeleton.props.children)[0];
     const loadedSubhead = React.Children.toArray(loaded.props.children)[0];
     assert.deepEqual(flatten(pendingSubhead.props.style), flatten(loadedSubhead.props.style));
-    const pendingCards = nodes(skeleton).filter(n => n.type === "Surface" && n.props.testID === "group-stat-skeleton");
-    const loadedCards = nodes(loaded).filter(n => n.type === "Surface");
-    assert.equal(pendingCards.length, 2);
-    assert.equal(loadedCards.length, 2);
-    pendingCards.forEach((card, i) => {
-      assert.deepEqual(flatten(card.props.style), flatten(loadedCards[i].props.style));
-      assert.equal(flatten(card.props.style).minHeight, 110 * fontScale);
-    });
-    // The reservation is the outstanding-balance card; a settled result keeps the
+    assert.equal(nodes(skeleton).filter(n => n.props?.testID === "group-stat-skeleton").length, 0);
+    assert.doesNotMatch(text(loaded), /My spending|Group summary/);
+    // The reservation is an open settlement row; a settled result keeps the
     // painted height as a floor (onLayout) so the ledger does not move up.
     const reserved = byId(skeleton, "group-settlement-skeleton");
-    assert.equal(reserved.type, "Surface");
-    assert.equal(flatten(reserved.props.style).borderWidth, 1);
-    assert.equal(nodes(reserved).some(n => flatten(n.props?.style)?.minHeight === 60), true);
+    assert.equal(reserved.type, "View");
+    assert.equal(nodes(reserved).some(n => flatten(n.props?.style)?.minHeight === 48), true);
     assert.ok(byId(loaded, "group-settled-inline"));
   }
 });
@@ -459,7 +452,7 @@ test("dashboard skeleton geometry survives member and currency hydration in eith
     const props = { balances: [], currentUserId: "me", loading: true };
     const geometry = tree => React.Children.toArray(tree.props.children).map(node => flatten(node.props.style));
     const firstFrame = geometry(GroupDashboard({ ...props, membersKnown: false, activeMemberCount: 0 }));
-    assert.equal(firstFrame.length, 3, "reserve the header, settlement line and cards on first paint");
+    assert.equal(firstFrame.length, 2, "reserve the header and settlement line on first paint");
     for (const activeMemberCount of [0, 1, 3]) {
       for (const groupSettings of [null, { enabled: false }, { enabled: true, settlementCurrency: "INR" }]) {
         preferences.groupSettings = groupSettings;
@@ -483,7 +476,7 @@ test("known solo and non-unified groups have no unused rows during or after load
         const loaded = GroupDashboard({ ...props, loading: false });
         const pendingRows = React.Children.toArray(pending.props.children);
         const loadedRows = React.Children.toArray(loaded.props.children);
-        const expectedRows = 1 + (activeMemberCount > 1 ? 1 + Number(enabled) : 0);
+        const expectedRows = activeMemberCount > 1 ? 1 + Number(enabled) : 0;
         assert.equal(pendingRows.length, expectedRows);
         assert.equal(loadedRows.length, expectedRows);
         assert.deepEqual(pendingRows.map(row => flatten(row.props.style)), loadedRows.map(row => flatten(row.props.style)));
@@ -504,7 +497,7 @@ test("navigation unify flag predicts the header before local preferences hydrate
     const loaded = GroupDashboard({ ...props, loading: false });
     const geometry = tree => React.Children.toArray(tree.props.children).map(row => flatten(row.props.style));
     assert.deepEqual(geometry(pending), geometry(loaded));
-    assert.equal(geometry(pending).length, unifyBalances ? 3 : 2);
+    assert.equal(geometry(pending).length, unifyBalances ? 2 : 1);
   }
 });
 
@@ -516,7 +509,7 @@ test("cached effective currency settings take precedence over stale navigation f
     const loaded = GroupDashboard({ ...props, loading: false });
     const geometry = tree => React.Children.toArray(tree.props.children).map(row => flatten(row.props.style));
     assert.deepEqual(geometry(pending), geometry(loaded));
-    assert.equal(geometry(loaded).length, enabled ? 3 : 2);
+    assert.equal(geometry(loaded).length, enabled ? 2 : 1);
   }
 });
 
@@ -526,10 +519,10 @@ test("unknown-to-solo reserves during loading but leaves no empty slot once memb
   const pending = GroupDashboard({ ...props, membersKnown: false, loading: true });
   const loaded = GroupDashboard({ ...props, membersKnown: true, loading: false });
   const rows = tree => React.Children.toArray(tree.props.children).length;
-  assert.equal(rows(pending), 2);
-  assert.equal(rows(loaded), 1);
+  assert.equal(rows(pending), 1);
+  assert.equal(rows(loaded), 0);
   const reopened = components().GroupDashboard({ ...props, membersKnown: true, loading: false });
-  assert.equal(rows(reopened), 1);
+  assert.equal(rows(reopened), 0); // spending cards no longer occupy a slot once members resolve
 });
 
 test("a cached multi-member prediction cannot leave empty slots after membership changes", () => {
@@ -539,9 +532,9 @@ test("a cached multi-member prediction cannot leave empty slots after membership
   const stillPending = GroupDashboard({ ...props, activeMemberCount: 1, loading: true });
   const loaded = GroupDashboard({ ...props, activeMemberCount: 1, loading: false });
   const rows = tree => React.Children.toArray(tree.props.children).length;
-  assert.equal(rows(pending), 3);
-  assert.equal(rows(stillPending), 3);
-  assert.equal(rows(loaded), 1);
+  assert.equal(rows(pending), 2);
+  assert.equal(rows(stillPending), 2);
+  assert.equal(rows(loaded), 0);
   assert.doesNotMatch(text(loaded), /In one currency|All settled/);
 });
 
@@ -550,8 +543,8 @@ test("stale known-solo metadata does not hide real multi-member content after lo
   const props = { balances: [], currentUserId: "me" };
   const pending = GroupDashboard({ ...props, activeMemberCount: 1, loading: true });
   const stillPending = GroupDashboard({ ...props, activeMemberCount: 3, loading: true });
-  assert.equal(React.Children.toArray(pending.props.children).length, 1);
-  assert.equal(React.Children.toArray(stillPending.props.children).length, 1);
+  assert.equal(React.Children.toArray(pending.props.children).length, 0);
+  assert.equal(React.Children.toArray(stillPending.props.children).length, 0);
   const loaded = GroupDashboard({ ...props, activeMemberCount: 3, loading: false });
   assert.match(text(loaded), /In one currency/);
   assert.match(text(loaded), /All settled/);
@@ -615,7 +608,7 @@ test("GroupDashboard settlement rows are pressable only when pressed", () => {
   const row = rows[0];
   assert.equal(typeof row.props.onPress, "function");
   assert.equal(row.props.accessibilityRole, "button");
-  assert.equal(row.props.accessibilityLabel, "Alice owes you, +$50.00");
+  assert.equal(row.props.accessibilityLabel, "Alice owes you, +$50");
   assert.ok((row.props.style?.minHeight ?? 0) >= 44);
   assert.equal(pressed, null);
   row.props.onPress();
@@ -625,13 +618,13 @@ test("GroupDashboard settlement rows are pressable only when pressed", () => {
 
 test("dashboard accessible settlement label includes counterparty, direction, and signed amount", () => {
   const owed = dashboard([balance("me", 50), balance("Alice", -50)], { onSettlePress: () => {} });
-  assert.equal(settlementRows(owed)[0].props.accessibilityLabel, "Alice owes you, +$50.00");
+  assert.equal(settlementRows(owed)[0].props.accessibilityLabel, "Alice owes you, +$50");
   const owe = dashboard([balance("me", -40), balance("Bob", 40)], { onSettlePress: () => {} });
-  assert.equal(settlementRows(owe)[0].props.accessibilityLabel, "You owe Bob, -$40.00");
+  assert.equal(settlementRows(owe)[0].props.accessibilityLabel, "You owe Bob, -$40");
   const eur = dashboard([
     { ...balance("me", -30, "EUR") }, balance("Cara", 30, "EUR"),
   ], { onSettlePress: () => {} });
-  assert.equal(settlementRows(eur)[0].props.accessibilityLabel, "You owe Cara, -€30.00");
+  assert.equal(settlementRows(eur)[0].props.accessibilityLabel, "You owe Cara, -€30");
 });
 
 test("dashboard settlement row layout keeps amount out of the label column", () => {
@@ -677,24 +670,16 @@ test("settlement chevron stays outside the reflowing text and initials grow with
   assert.equal(flatten(detail.props.style).minWidth, 0);
   assert.equal(flatten(detail.props.style).flex, 1);
   assert.equal(children.at(-1).props.name, "chevron-right");
-  assert.equal(nodes(row).some(n => n.type === "Avatar.Text"), false, "fixed Paper avatar clips enlarged initials");
-  const initials = nodes(row).find(n => n.type === "Text" && text(n) === "AL");
-  assert.ok(initials);
-  assert.equal(initials.props.numberOfLines, undefined);
-  assert.equal(initials.props.maxFontSizeMultiplier, undefined);
+  assert.equal(nodes(row).some(n => n.type === "Avatar.Text"), false);
+  assert.equal(nodes(row).some(n => n.type === "Text" && text(n) === "AL"), false);
 });
 
-test("dashboard insights stack at enlarged text and preserve full financial labels", () => {
+test("spending cards stay off the default group page", () => {
   for (const fontScale of [1, 2]) {
     const tree = components({}, { colors: {} }, { width: 402, fontScale }).GroupDashboard({
       balances: [], currentUserId: "me", loading: false, defaultCurrency: "USD",
     });
-    const stats = React.Children.toArray(tree.props.children).at(-1);
-    assert.equal(flatten(stats.props.style).flexDirection, fontScale === 1 ? "row" : "column");
-    for (const value of nodes(stats).filter(n => n.type === "Text")) {
-      assert.equal(value.props.numberOfLines, undefined, "financial summaries must not silently truncate");
-      assert.equal(value.props.maxFontSizeMultiplier, undefined);
-    }
+    assert.doesNotMatch(text(tree), /My spending|Group summary/);
   }
 });
 
@@ -726,7 +711,7 @@ test("dashboard without onSettlePress is informational: no button role, chevron,
   assert.notEqual(row.props.accessibilityRole, "button");
   assert.equal(nodes(row).some(node => node.type === "Icon" && node.props.name === "chevron-right"), false);
   assert.match(text(row), /Alice owes you/);
-  assert.match(text(row), /\+\$50\.00/);
+  assert.match(text(row), /\+\$50$/);
 });
 
 test("GroupDetailsScreen wires balanceError and gates onSettlePress for active members only", () => {

@@ -60,7 +60,9 @@ test("Archived and Former share disclosure header inset + compact divider childr
   assert.equal(styles.nestedGroupRow.borderBottomWidth, 1);
   assert.equal(styles.nestedGroupRow.borderRadius, undefined);
   assert.equal(styles.nestedGroupName.fontWeight, "600");
-  assert.equal(styles.groupItem.borderRadius, 14);
+  assert.equal(styles.groupItem.borderRadius, undefined);
+  assert.equal(styles.groupItem.borderBottomWidth, 1);
+  assert.equal(styles.groupItem.marginBottom, undefined);
   assert.notEqual(styles.nestedGroupRow.borderRadius, 14);
   assert.ok((styles.sectionDisclosureHeader.minHeight ?? 0) >= 44);
   assert.equal(styles.sectionDisclosureHeaderRow.paddingHorizontal, 14);
@@ -358,10 +360,11 @@ test("bootstrap and initial Groups query share the same loading rows and header 
     assert.equal(nodes(tree).some(node => node.type === "ActivityIndicator"), false);
   }
   const rows = app.skeletonRows();
-  const surfaces = nodes(rows).filter(node => node.type === "Surface");
+  const surfaces = nodes(rows).filter(node => node.props?.testID === "group-skeleton-row");
   assert.equal(surfaces.length, 6);
   for (const row of surfaces) {
     assert.equal(flatten(row.props.style).borderRadius, realStyles.groupItem.borderRadius);
+    assert.equal(flatten(row.props.style).borderBottomWidth, realStyles.groupItem.borderBottomWidth);
     assert.equal(flatten(row.props.style).marginBottom, realStyles.groupItem.marginBottom);
     assert.deepEqual(flatten(row.props.children.props.style), realStyles.groupTouchable);
     // Uncached rows reserve the common name + description height, not a name-only row.
@@ -482,6 +485,15 @@ test("Home empty state: Create a group primary + tertiary one-time split link", 
       }
       if (id === "../utils/currency") {
         return { formatCurrency: (amount) => `$${Number(amount).toFixed(2)}` };
+      }
+      if (id === "../utils/groupsListStatus") {
+        return { groupsListStatusLine: () => null };
+      }
+      if (id === "../utils/networkErrors") {
+        return { isBenignConnectivityError: () => false };
+      }
+      if (id === "../utils/settleShareMessage") {
+        return { formatShareCurrency: (amount) => `$${Number(amount).toFixed(2)}` };
       }
       if (id === "../utils/sentryTelemetry") return { recordSentryListCounts: () => {} };
       if (id === "../utils/posthogAnalytics") return { captureIdentifiedAnalyticsEvent: () => {} };

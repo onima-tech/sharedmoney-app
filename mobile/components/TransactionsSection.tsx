@@ -1,53 +1,31 @@
 import React from "react";
-import { Pressable, useWindowDimensions, View } from "react-native";
+import { Pressable, StyleSheet, useWindowDimensions, View } from "react-native";
 import {
   ActivityIndicator,
   Button,
-  Icon,
-  Surface,
   Text,
   useTheme,
 } from "react-native-paper";
 import { Skeleton, SkeletonGroup } from "./Skeleton";
 import { useAuth } from "../contexts/AuthContext";
 import { Participant, Settlement, Transaction } from "../types";
-import { formatCurrency, getDefaultCurrency } from "../utils/currency";
-import { isUnequalSplit } from "../utils/splits";
+import { balanceAmountColor } from "../utils/balanceRowLabels";
+import { resolveLedgerParticipantName } from "../utils/ledgerNames";
+import { isOptimisticTransactionId } from "../utils/transactionOptimisticCache";
 import { openTransactionWithHighlightConsumption } from "../utils/transactionHighlight";
+import {
+  buildExpenseRowModel,
+  paymentAmountText,
+  paymentRowTitle,
+} from "../utils/transactionRowImpact";
 import {
   countActiveMembers,
   getTransactionsEmptyCopy,
 } from "../utils/transactionsEmptyCopy";
 import type { LedgerItem } from "../utils/transactionsLedger";
+import { getDefaultCurrency } from "../utils/currency";
+import { groupByLedgerDateSection } from "../utils/ledgerDateSections";
 import { styles } from "./TransactionsSection.styles";
-
-function formatRelativeDate(raw: string): string {
-  const date = new Date(raw);
-  if (Number.isNaN(date.getTime())) return "";
-
-  const now = new Date();
-  const yesterday = new Date(now);
-  yesterday.setDate(yesterday.getDate() - 1);
-
-  if (date.toDateString() === now.toDateString()) return "Today";
-  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
-function getCategoryIcon(category: string) {
-  const lowerCat = category?.toLowerCase() || "";
-  if (!lowerCat.trim()) return "help-circle-outline";
-  if (lowerCat.includes("food") || lowerCat.includes("restaurant")) return "silverware-fork-knife";
-  if (lowerCat.includes("transport") || lowerCat.includes("taxi") || lowerCat.includes("uber")) return "taxi";
-  if (lowerCat.includes("grocery") || lowerCat.includes("market")) return "cart-outline";
-  if (lowerCat.includes("entertainment") || lowerCat.includes("movie")) return "movie-open-outline";
-  if (lowerCat.includes("travel") || lowerCat.includes("flight")) return "airplane";
-  if (lowerCat.includes("shopping")) return "shopping-outline";
-  if (lowerCat.includes("rent")) return "home-outline";
-  if (lowerCat.includes("utilities") || lowerCat.includes("utility")) return "lightning-bolt-outline";
-  if (lowerCat.includes("health") || lowerCat.includes("medical")) return "medical-bag";
-  return "tag-outline";
-}
 
 export interface LedgerRowProps {
   item: LedgerItem;
@@ -58,6 +36,29 @@ export interface LedgerRowProps {
   onHighlightedInteraction?: (transactionId: number) => void;
   onEditExpense: (t: Transaction) => void;
   onEditPayment?: (s: Settlement) => void;
+  /** Preview and tests can pin the viewer without a session. */
+  viewerUserId?: string | null;
+}
+
+export function LedgerDateLabel({ label }: { label: string }) {
+  const theme = useTheme();
+  return (
+    <Text
+      variant="labelSmall"
+      accessibilityRole="header"
+      style={{
+        color: theme.colors.onSurfaceVariant,
+        letterSpacing: 0.6,
+        textTransform: "uppercase",
+        fontWeight: "600",
+        paddingHorizontal: 16,
+        paddingTop: 14,
+        paddingBottom: 2,
+      }}
+    >
+      {label}
+    </Text>
+  );
 }
 
 export const LedgerRow: React.FC<LedgerRowProps> = ({
@@ -69,69 +70,30 @@ export const LedgerRow: React.FC<LedgerRowProps> = ({
   onHighlightedInteraction,
   onEditExpense,
   onEditPayment,
+  viewerUserId,
 }) => {
   const theme = useTheme();
   const { session } = useAuth();
-  const currentUserId = session?.user?.id;
+  const currentUserId = viewerUserId ?? session?.user?.id;
+  const viewerParticipantId = participants.find((person) => person.user_id === currentUserId)?.id;
 
-  const participantMap = React.useMemo(
-    () => new Map(participants.map((p) => [p.id, p])),
-    [participants],
-  );
+  const resolveParticipantName = (participantId?: string | null, userId?: string | null) =>
+    resolveLedgerParticipantName({
+      participantId,
+      userId,
+      currentUserId,
+      participants,
+      members,
+    });
 
-  const memberParticipantMap = React.useMemo(() => {
-    const map = new Map<string, any>();
-    for (const m of members) {
-      if (m.participant_id) map.set(m.participant_id, m);
-      if (m.id) map.set(m.id, m);
-    }
-    return map;
-  }, [members]);
-
-  const memberUserMap = React.useMemo(
-    () => new Map(members.map((m) => [m.user_id, m])),
-    [members],
-  );
-
-  const resolveParticipantName = (participantId?: string | null, userId?: string | null) => {
-    if (participantId) {
-      const participant = participantMap.get(participantId);
-      if (participant) {
-        const baseName =
-          participant.user_id === currentUserId
-            ? "You"
-            : participant.full_name ||
-              participant.email?.split("@")[0] ||
-              participant.email ||
-              "Unknown";
-        return participant.type === "former" ? `${baseName} (Former)` : baseName;
-      }
-
-      const member = memberParticipantMap.get(participantId);
-      if (member) {
-        const baseName =
-          member.user_id === currentUserId
-            ? "You"
-            : member.full_name || member.email?.split("@")[0] || member.email || "Unknown";
-        return member.status === "left" ? `${baseName} (Former)` : baseName;
-      }
-    }
-
-    if (userId) {
-      if (userId === currentUserId) return "You";
-      const payer = memberUserMap.get(userId);
-      if (payer) {
-        return payer.full_name || payer.email?.split("@")[0] || payer.email || "Unknown";
-      }
-    }
-
-    return "Unknown";
+  const hairline = {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.outlineVariant,
   };
 
   if (item.kind === "payment") {
     const settlement = item.settlement;
     const currency = settlement.currency || getDefaultCurrency();
-    const dateString = formatRelativeDate(settlement.created_at);
     const fromName = resolveParticipantName(
       settlement.from_participant_id,
       settlement.from_user_id,
@@ -140,102 +102,78 @@ export const LedgerRow: React.FC<LedgerRowProps> = ({
       settlement.to_participant_id,
       settlement.to_user_id,
     );
-    const title = settlement.notes?.trim() || "Payment";
+    const title = paymentRowTitle(fromName, toName);
+    const amountText = paymentAmountText(settlement.amount, currency);
     const canEdit = !!onEditPayment;
 
     return (
-      <Surface style={styles.card} elevation={0}>
-        <Pressable
-          onPress={() => onEditPayment?.(settlement)}
-          disabled={!canEdit}
-          accessibilityRole="button"
-          accessibilityLabel={`Payment, ${fromName} paid ${toName}, ${formatCurrency(settlement.amount, currency)}`}
-          testID={`ledger-payment-${settlement.id}`}
-          style={({ pressed }) => [
-            styles.pressable,
-            pressed && canEdit && { backgroundColor: theme.colors.surfaceVariant },
-          ]}
-        >
-          <View style={styles.row}>
-            <View
-              style={[
-                styles.iconContainer,
-                { backgroundColor: theme.colors.tertiaryContainer },
-              ]}
-            >
-              <Icon
-                source="handshake-outline"
-                size={18}
-                color={theme.colors.onTertiaryContainer}
-              />
-            </View>
-
-            <View style={styles.content}>
-              <View style={styles.headerRow}>
-                <Text
-                  variant="titleMedium"
-                  numberOfLines={1}
-                  style={[styles.title, { color: theme.colors.onSurface }]}
-                >
-                  {title}
-                </Text>
-                <Text
-                  variant="titleMedium"
-                  style={{
-                    fontWeight: "bold",
-                    color: theme.colors.onSurface,
-                    flexShrink: 0,
-                  }}
-                >
-                  {formatCurrency(settlement.amount, currency)}
-                </Text>
-              </View>
-
-              <View style={styles.subRow}>
-                <Text
-                  variant="labelSmall"
-                  style={[styles.typeLabel, { color: theme.colors.tertiary }]}
-                >
-                  Payment
-                </Text>
-                <Text
-                  variant="bodySmall"
-                  numberOfLines={1}
-                  style={{ color: theme.colors.onSurfaceVariant, flex: 1 }}
-                >
-                  {" "}
-                  • {dateString} • {fromName} → {toName}
-                </Text>
-              </View>
-            </View>
-          </View>
-        </Pressable>
-      </Surface>
+      <Pressable
+        onPress={() => onEditPayment?.(settlement)}
+        disabled={!canEdit}
+        accessibilityRole="button"
+        accessibilityLabel={`${title}, ${amountText}`}
+        testID={`ledger-payment-${settlement.id}`}
+        style={({ pressed }) => [
+          styles.pressable,
+          hairline,
+          pressed && canEdit && { backgroundColor: theme.colors.surfaceVariant },
+        ]}
+      >
+        <View style={styles.row}>
+          <Text
+            variant="titleMedium"
+            numberOfLines={1}
+            style={[styles.title, { color: theme.colors.onSurface }]}
+          >
+            {title}
+          </Text>
+          <Text
+            variant="titleMedium"
+            testID={`ledger-payment-amount-${settlement.id}`}
+            style={{
+              fontWeight: "600",
+              color: theme.colors.onSurface,
+              flexShrink: 0,
+              marginLeft: 12,
+            }}
+          >
+            {amountText}
+          </Text>
+        </View>
+      </Pressable>
     );
   }
 
   const transaction = item.transaction;
   const isHighlighted = transaction.id === highlightedTransactionId;
   const currency = transaction.currency || getDefaultCurrency();
-  const categoryIcon = getCategoryIcon(transaction.category || "");
-  const dateString = formatRelativeDate(transaction.date);
   const payerName = resolveParticipantName(
     transaction.paid_by_participant_id,
     transaction.paid_by,
   );
-  const unequalSplit = transaction.splits
-    ? isUnequalSplit(transaction.splits)
-    : false;
+  const model = buildExpenseRowModel({
+    amount: transaction.amount,
+    currency,
+    payerName,
+    paidByParticipantId: transaction.paid_by_participant_id,
+    paidByUserId: transaction.paid_by,
+    splits: transaction.splits,
+    viewer: { userId: currentUserId, participantId: viewerParticipantId },
+    saving: isOptimisticTransactionId(transaction.id),
+  });
+  const title = transaction.description || "Untitled";
+  const impactColor = model.impactMuted || model.net == null
+    ? theme.colors.onSurfaceVariant
+    : balanceAmountColor(model.net, theme.colors, { dark: theme.dark });
 
   return (
-    <Surface
+    <View
       onLayout={
         isHighlighted
           ? (event) => onHighlightedLayout?.(event.nativeEvent.layout.y)
           : undefined
       }
-      style={styles.card}
-      elevation={0}
+      style={hairline}
     >
       <View
         pointerEvents="none"
@@ -245,9 +183,7 @@ export const LedgerRow: React.FC<LedgerRowProps> = ({
             backgroundColor: isHighlighted
               ? theme.colors.primaryContainer
               : "transparent",
-            borderColor: isHighlighted
-              ? theme.colors.primary
-              : "transparent",
+            borderColor: "transparent",
           },
         ]}
       />
@@ -260,7 +196,7 @@ export const LedgerRow: React.FC<LedgerRowProps> = ({
           )
         }
         accessibilityRole="button"
-        accessibilityLabel={`Expense, ${transaction.description || "Untitled"}, ${formatCurrency(transaction.amount, currency)}${isHighlighted ? ", highlighted from notification" : ""}`}
+        accessibilityLabel={`${title}. ${model.payerLine}. ${model.impactText}${isHighlighted ? ". Highlighted from notification" : ""}`}
         testID={`ledger-expense-${transaction.id}`}
         style={({ pressed }) => [
           styles.pressable,
@@ -268,67 +204,45 @@ export const LedgerRow: React.FC<LedgerRowProps> = ({
         ]}
       >
         <View style={styles.row}>
-          <View
-            style={[
-              styles.iconContainer,
-              { backgroundColor: theme.colors.primaryContainer },
-            ]}
-          >
-            <Icon
-              source={categoryIcon}
-              size={18}
-              color={theme.colors.onPrimaryContainer}
-            />
-          </View>
-
           <View style={styles.content}>
-            <View style={styles.headerRow}>
-              <Text
-                variant="titleMedium"
-                numberOfLines={1}
-                style={[styles.title, { color: theme.colors.onSurface }]}
-              >
-                {transaction.description || "Untitled"}
-              </Text>
-              <Text
-                variant="titleMedium"
-                style={{
-                  fontWeight: "bold",
-                  color: theme.colors.onSurface,
-                  flexShrink: 0,
-                }}
-              >
-                {formatCurrency(transaction.amount, currency)}
-              </Text>
-            </View>
-
-            <View style={styles.subRow}>
+            <Text
+              variant="titleMedium"
+              numberOfLines={1}
+              style={[styles.title, { color: theme.colors.onSurface }]}
+            >
+              {title}
+            </Text>
+            {model.payerLine ? (
               <Text
                 variant="bodySmall"
                 numberOfLines={1}
-                style={{ color: theme.colors.onSurfaceVariant, flex: 1 }}
+                testID={`ledger-payer-${transaction.id}`}
+                style={{ color: theme.colors.onSurfaceVariant, marginTop: 2 }}
               >
-                {payerName}
-                {unequalSplit ? " · Unequal" : ""}
+                {model.payerLine}
               </Text>
-              {dateString ? (
-                <Text
-                  variant="bodySmall"
-                  style={{ color: theme.colors.onSurfaceVariant, marginRight: 8 }}
-                >
-                  {dateString}
-                </Text>
-              ) : null}
-              <Icon
-                source="chevron-right"
-                size={18}
-                color={theme.colors.onSurfaceVariant}
-              />
-            </View>
+            ) : null}
           </View>
+          {model.impactText ? (
+            <Text
+              variant="titleSmall"
+              numberOfLines={2}
+              testID={`ledger-impact-${transaction.id}`}
+              style={{
+                fontWeight: "600",
+                color: impactColor,
+                flexShrink: 1,
+                maxWidth: "48%",
+                marginLeft: 12,
+                textAlign: "right",
+              }}
+            >
+              {model.impactText}
+            </Text>
+          ) : null}
         </View>
       </Pressable>
-    </Surface>
+    </View>
   );
 };
 
@@ -341,9 +255,6 @@ export function LedgerSkeleton() {
       {[0, 1, 2, 3, 4].map((key) => (
         <View key={key} style={styles.pressable}>
           <View style={styles.row}>
-            <View style={styles.iconContainer}>
-              <Skeleton width={40} height={40} borderRadius={20} />
-            </View>
             <View style={styles.content}>
               <View style={[styles.headerRow, { height: theme.fonts.titleMedium.lineHeight * fontScale }]}>
                 <View style={styles.title}><Skeleton width="80%" height={16} /></View>
@@ -542,18 +453,29 @@ export const TransactionsSection: React.FC<TransactionsSectionProps> = ({
         <ActivityIndicator size="small" style={{ marginVertical: 24 }} />
       ) : items.length > 0 ? (
         <View style={styles.list}>
-          {items.map((item) => (
-            <LedgerRow
-              key={item.key}
-              item={item}
-              members={members}
-              participants={participants}
-              highlightedTransactionId={highlightedTransactionId}
-              onHighlightedLayout={onHighlightedLayout}
-              onHighlightedInteraction={onHighlightedInteraction}
-              onEditExpense={onEditExpense}
-              onEditPayment={onEditPayment}
-            />
+          {groupByLedgerDateSection(
+            items,
+            (entry) => entry.kind === "expense"
+              ? entry.transaction.date
+              : entry.settlement.created_at,
+            new Date(),
+          ).map((section) => (
+            <View key={section.label}>
+              <LedgerDateLabel label={section.label} />
+              {section.items.map((item) => (
+                <LedgerRow
+                  key={item.key}
+                  item={item}
+                  members={members}
+                  participants={participants}
+                  highlightedTransactionId={highlightedTransactionId}
+                  onHighlightedLayout={onHighlightedLayout}
+                  onHighlightedInteraction={onHighlightedInteraction}
+                  onEditExpense={onEditExpense}
+                  onEditPayment={onEditPayment}
+                />
+              ))}
+            </View>
           ))}
           {(isFetchingNextPage || hasNextPage) && filter !== "payments" && (
             <View style={{ alignItems: "center", paddingVertical: 16 }}>
