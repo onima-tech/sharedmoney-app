@@ -49,7 +49,7 @@ import { captureIdentifiedAnalyticsEvent } from "../utils/posthogAnalytics";
 import { ANALYTICS_EVENTS } from "../utils/posthogEvents";
 import {
   getAddMemberSheetFrame,
-  scrollOffsetToRevealField,
+  revealAddMemberField,
 } from "../utils/addMemberSheetLayout";
 
 interface AddMemberScreenProps {
@@ -69,6 +69,13 @@ interface AddMemberScreenProps {
 
 type SheetMode = "chooser" | "create" | "existing";
 type AddPersonField = "name" | "email" | "phone";
+
+const ADD_PERSON_FIELDS: AddPersonField[] = ["name", "email", "phone"];
+
+type FollowerGap = {
+  before: AddPersonField;
+  height: number;
+};
 
 const LINK_MAX_USES = 10;
 const LINK_VALID_DAYS = 30;
@@ -120,9 +127,14 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
   const [fieldLayouts, setFieldLayouts] = useState<
     Partial<Record<AddPersonField, { y: number; height: number }>>
   >({});
+  const [followerGap, setFollowerGap] = useState<FollowerGap | null>(null);
   const [scrollViewportHeight, setScrollViewportHeight] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
   const scrollOffset = useRef(0);
+  const lockedScrollOffset = useRef(0);
+  const layoutEpoch = useRef(0);
+  const revealKey = useRef("");
+  const waitForLayoutEpoch = useRef<number | null>(null);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardOverlap(visible);
@@ -376,27 +388,90 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
       setFieldLayouts((prev) => {
         const current = prev[field];
         if (current && current.y === y && current.height === height) return prev;
+        layoutEpoch.current += 1;
         return { ...prev, [field]: { y, height } };
       });
     };
 
+  // While Email is focused, Name has to stay on screen and Phone must not
+  // remain as a cut label between Email and the pinned Add person button.
+  // The gap is frozen for a given focus + viewport so applying it (which
+  // shifts later rows) does not feed back into the next measurement.
   useEffect(() => {
-    if (!sheetFrame.keyboardOpen || focusedField == null) return;
-    const layout = fieldLayouts[focusedField];
-    if (!layout || scrollViewportHeight <= 0) return;
-    const y = scrollOffsetToRevealField({
-      fieldY: layout.y,
-      fieldHeight: layout.height,
+    if (!sheetFrame.keyboardOpen || focusedField == null || scrollViewportHeight <= 0) {
+      revealKey.current = "";
+      waitForLayoutEpoch.current = null;
+      setFollowerGap((prev) => (prev == null ? prev : null));
+      return;
+    }
+    const name = fieldLayouts.name;
+    const email = fieldLayouts.email;
+    const phone = fieldLayouts.phone;
+    if (
+      !name || !email || !phone ||
+      name.height <= 0 || email.height <= 0 || phone.height <= 0
+    ) {
+      return;
+    }
+    const key = [
+      focusedField,
+      Math.round(scrollViewportHeight),
+      Math.round(name.y),
+      Math.round(name.height),
+      Math.round(email.height),
+      Math.round(phone.height),
+    ].join(":");
+    if (revealKey.current === key) {
+      scrollRef.current?.scrollTo({ y: lockedScrollOffset.current, animated: false });
+      return;
+    }
+
+    if (followerGap != null) {
+      waitForLayoutEpoch.current = layoutEpoch.current;
+      revealKey.current = "";
+      setFollowerGap(null);
+      return;
+    }
+    if (
+      waitForLayoutEpoch.current != null &&
+      layoutEpoch.current <= waitForLayoutEpoch.current
+    ) {
+      return;
+    }
+    waitForLayoutEpoch.current = null;
+
+    const reveal = revealAddMemberField({
+      fields: [name, email, phone],
+      focusedIndex: ADD_PERSON_FIELDS.indexOf(focusedField),
+      alsoVisible: focusedField === "email" ? [0] : [],
       viewportHeight: scrollViewportHeight,
       currentOffset: scrollOffset.current,
     });
-    scrollRef.current?.scrollTo({ y, animated: false });
+    revealKey.current = key;
+    lockedScrollOffset.current = reveal.offset;
+    scrollOffset.current = reveal.offset;
+    scrollRef.current?.scrollTo({ y: reveal.offset, animated: false });
+    if (reveal.gap > 0 && reveal.gapBeforeIndex != null) {
+      const before = ADD_PERSON_FIELDS[reveal.gapBeforeIndex];
+      if (before) {
+        setFollowerGap({ before, height: reveal.gap });
+        return;
+      }
+    }
+    setFollowerGap(null);
   }, [
     sheetFrame.keyboardOpen,
     focusedField,
     fieldLayouts,
     scrollViewportHeight,
+    followerGap,
   ]);
+
+  const followerSpacer = (before: AddPersonField) => (
+    followerGap?.before === before && followerGap.height > 0
+      ? <View style={{ height: followerGap.height }} />
+      : null
+  );
 
   const renderAddButton = () => (
     <Button
@@ -662,7 +737,10 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
                           Add them now and include them in expenses. Email is
                           optional.
                         </Text>
-                        <View onLayout={rememberFieldLayout("name")}>
+                        <View
+                          collapsable={false}
+                          onLayout={rememberFieldLayout("name")}
+                        >
                           <TextInput
                             label="Name"
                             value={fullName}
@@ -677,7 +755,11 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
                             testID="person-name-input"
                           />
                         </View>
-                        <View onLayout={rememberFieldLayout("email")}>
+                        {followerSpacer("email")}
+                        <View
+                          collapsable={false}
+                          onLayout={rememberFieldLayout("email")}
+                        >
                           <TextInput
                             label="Email (optional)"
                             value={email}
@@ -716,7 +798,9 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
                             </Text>
                           )
                           : null}
+                        {followerSpacer("phone")}
                         <View
+                          collapsable={false}
                           style={styles.phoneInputWrapper}
                           onLayout={rememberFieldLayout("phone")}
                         >

@@ -140,3 +140,151 @@ export function scrollOffsetToRevealField(input: {
   if (fieldTop < visibleTop) return Math.max(0, fieldTop - padding);
   return Math.max(0, fieldBottom - input.viewportHeight + padding);
 }
+
+export type AddMemberFieldBox = {
+  y: number;
+  height: number;
+};
+
+export type AddMemberFieldReveal = {
+  offset: number;
+  /**
+   * Insert this many pixels immediately before `gapBeforeIndex` so a row that
+   * cannot be scrolled away is pushed fully past the viewport. Zero when the
+   * scroll offset alone keeps every non-focused row either complete or gone.
+   */
+  gap: number;
+  gapBeforeIndex: number | null;
+};
+
+const FIELD_SLIVER_PX = 1;
+
+function fieldBottom(box: AddMemberFieldBox): number {
+  return box.y + box.height;
+}
+
+function visibleFieldPx(
+  box: AddMemberFieldBox,
+  offset: number,
+  viewportHeight: number,
+): number {
+  const top = offset;
+  const bottom = offset + viewportHeight;
+  return Math.max(0, Math.min(fieldBottom(box), bottom) - Math.max(box.y, top));
+}
+
+type FieldVisibility = "full" | "out" | "partial";
+
+function fieldVisibility(
+  box: AddMemberFieldBox,
+  offset: number,
+  viewportHeight: number,
+): FieldVisibility {
+  if (!(box.height > 0)) return "out";
+  const shown = visibleFieldPx(box, offset, viewportHeight);
+  if (shown <= FIELD_SLIVER_PX) return "out";
+  if (shown >= box.height - FIELD_SLIVER_PX) return "full";
+  return "partial";
+}
+
+/**
+ * Scroll the focused Add person field into view without leaving a sliced row.
+ *
+ * `scrollOffsetToRevealField` only keeps the focused field on screen. On a
+ * short phone that parks the next row (Phone, while Email is focused) a few
+ * pixels inside the viewport, which cuts its label in half above the pinned
+ * Add person button. A partial row is scrolled fully out when Name/Email
+ * still fit. When it does not, `gap` is empty padding that pushes the row
+ * past the fold. Callers must pass natural y positions, with any gap this
+ * function previously applied already subtracted.
+ */
+export function revealAddMemberField(input: {
+  fields: AddMemberFieldBox[];
+  focusedIndex: number;
+  viewportHeight: number;
+  currentOffset?: number;
+  padding?: number;
+  /** Indexes that must stay fully visible together with the focused field. */
+  alsoVisible?: number[];
+}): AddMemberFieldReveal {
+  const viewport = input.viewportHeight;
+  const current = Math.max(0, input.currentOffset ?? 0);
+  const focused = input.fields[input.focusedIndex];
+  if (!focused || !(viewport > 0)) {
+    return { offset: current, gap: 0, gapBeforeIndex: null };
+  }
+
+  const required = new Set<number>([
+    input.focusedIndex,
+    ...(input.alsoVisible ?? []),
+  ]);
+  let minOffset = 0;
+  let maxOffset = Number.POSITIVE_INFINITY;
+  for (const index of required) {
+    const box = input.fields[index];
+    if (!box || !(box.height > 0)) continue;
+    minOffset = Math.max(minOffset, fieldBottom(box) - viewport);
+    maxOffset = Math.min(maxOffset, box.y);
+  }
+  minOffset = Math.max(0, minOffset);
+  if (!Number.isFinite(maxOffset) || maxOffset < minOffset) {
+    minOffset = Math.max(0, fieldBottom(focused) - viewport);
+    maxOffset = Math.max(minOffset, Math.max(0, focused.y));
+  }
+
+  const preferred = scrollOffsetToRevealField({
+    fieldY: focused.y,
+    fieldHeight: focused.height,
+    viewportHeight: viewport,
+    currentOffset: current,
+    padding: input.padding,
+  });
+  let offset = Math.min(Math.max(preferred, minOffset), maxOffset);
+
+  const hideBelow = (index: number) => {
+    const box = input.fields[index];
+    if (!box || fieldVisibility(box, offset, viewport) !== "partial") return;
+    const hideAt = box.y - viewport;
+    if (hideAt >= minOffset && hideAt <= maxOffset) offset = hideAt;
+  };
+
+  const nextIndex = input.focusedIndex + 1;
+  if (nextIndex < input.fields.length) hideBelow(nextIndex);
+
+  for (let index = input.focusedIndex - 1; index >= 0; index -= 1) {
+    if (required.has(index)) continue;
+    const box = input.fields[index];
+    if (!box || fieldVisibility(box, offset, viewport) !== "partial") continue;
+    const hideAt = fieldBottom(box);
+    if (hideAt >= minOffset && hideAt <= maxOffset) {
+      offset = hideAt;
+      continue;
+    }
+    const showAt = Math.max(minOffset, fieldBottom(box) - viewport);
+    if (
+      showAt <= maxOffset &&
+      fieldVisibility(box, showAt, viewport) === "full"
+    ) {
+      offset = showAt;
+    }
+  }
+
+  if (nextIndex < input.fields.length) hideBelow(nextIndex);
+
+  let gap = 0;
+  let gapBeforeIndex: number | null = null;
+  for (let index = nextIndex; index < input.fields.length; index += 1) {
+    const box = input.fields[index];
+    if (!box || fieldVisibility(box, offset, viewport) !== "partial") continue;
+    const hideAt = box.y - viewport;
+    if (hideAt >= minOffset && hideAt <= maxOffset) {
+      offset = hideAt;
+      continue;
+    }
+    gap = Math.max(0, Math.ceil(offset + viewport - box.y));
+    gapBeforeIndex = index;
+    break;
+  }
+
+  return { offset: Math.max(0, offset), gap, gapBeforeIndex };
+}

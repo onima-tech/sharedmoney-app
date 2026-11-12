@@ -4,6 +4,7 @@ import {
   getAddMemberSheetFrame,
   keyboardLift,
   restingAddMemberSheetHeight,
+  revealAddMemberField,
   scrollOffsetToRevealField,
 } from "./addMemberSheetLayout.ts";
 
@@ -248,5 +249,139 @@ describe("scrollOffsetToRevealField", () => {
       }),
       12,
     );
+  });
+});
+
+/**
+ * Short Android create sheet while the keyboard is open.
+ * Window 640, status bar 24, keyboard 280: the sheet is 336dp and the
+ * scrollport under the grabber, header, and pinned Add person footer is
+ * shorter than Name + Email + Phone stacked.
+ */
+const SHORT_ANDROID_EMAIL_FIELDS = {
+  name: { y: 40, height: 72 },
+  email: { y: 112, height: 72 },
+  phone: { y: 184, height: 72 },
+};
+
+function phoneVisiblePx(
+  offset: number,
+  viewport: number,
+  phoneY = SHORT_ANDROID_EMAIL_FIELDS.phone.y,
+): number {
+  const top = Math.max(phoneY, offset);
+  const bottom = Math.min(phoneY + SHORT_ANDROID_EMAIL_FIELDS.phone.height, offset + viewport);
+  return Math.max(0, bottom - top);
+}
+
+describe("short Android email focus with the keyboard open", () => {
+  const frame = getAddMemberSheetFrame({
+    windowHeight: ANDROID_SHORT,
+    restingWindowHeight: ANDROID_SHORT,
+    topInset: ANDROID_TOP,
+    keyboardHeight: ANDROID_KEYBOARD,
+    keyboardScreenY: ANDROID_SHORT - ANDROID_KEYBOARD,
+    fullScreen: false,
+  });
+
+  it("lifts the create sheet above the keyboard", () => {
+    assert.equal(frame.keyboardOpen, true);
+    assert.equal(frame.marginBottom, ANDROID_KEYBOARD);
+    assert.equal(frame.height, ANDROID_SHORT - ANDROID_KEYBOARD - ANDROID_TOP);
+  });
+
+  it("does not leave a cut Phone label between Email and Add person", () => {
+    // Scrollport inside the 336dp sheet. Name and Email fit; Phone starts
+    // in the port and the unfixed reveal keeps a cut "Phone (optional)" label.
+    const viewport = 208;
+    const { name, email, phone } = SHORT_ANDROID_EMAIL_FIELDS;
+    const unfixed = scrollOffsetToRevealField({
+      fieldY: email.y,
+      fieldHeight: email.height,
+      viewportHeight: viewport,
+      currentOffset: 0,
+    });
+    const unfixedPhone = phoneVisiblePx(unfixed, viewport);
+    assert.ok(
+      unfixedPhone > 8 && unfixedPhone < phone.height,
+      `fixture must reproduce the sliced phone label, saw ${unfixedPhone}px`,
+    );
+
+    const reveal = revealAddMemberField({
+      fields: [name, email, phone],
+      focusedIndex: 1,
+      alsoVisible: [0],
+      viewportHeight: viewport,
+      currentOffset: 0,
+    });
+    const phoneY = phone.y + (reveal.gapBeforeIndex === 2 ? reveal.gap : 0);
+    const visibleTop = reveal.offset;
+    const visibleBottom = reveal.offset + viewport;
+
+    assert.ok(name.y >= visibleTop && name.y + name.height <= visibleBottom, "Name stays fully visible");
+    assert.ok(email.y >= visibleTop && email.y + email.height <= visibleBottom, "Email stays fully visible");
+    assert.ok(
+      phoneY >= visibleBottom,
+      `Phone must be fully out of the viewport, top ${phoneY} visibleBottom ${visibleBottom}`,
+    );
+    assert.equal(phoneVisiblePx(reveal.offset, viewport, phoneY), 0);
+    assert.ok(reveal.gap > 0, "expected empty padding when the phone row cannot be scrolled away");
+  });
+
+  it("scrolls Phone fully out when Email must move up to stay above the footer", () => {
+    const viewport = 160;
+    const { name, email, phone } = SHORT_ANDROID_EMAIL_FIELDS;
+    const unfixed = scrollOffsetToRevealField({
+      fieldY: email.y,
+      fieldHeight: email.height,
+      viewportHeight: viewport,
+      currentOffset: 0,
+    });
+    assert.ok(phoneVisiblePx(unfixed, viewport) > 0);
+
+    const reveal = revealAddMemberField({
+      fields: [name, email, phone],
+      focusedIndex: 1,
+      alsoVisible: [0],
+      viewportHeight: viewport,
+      currentOffset: 0,
+    });
+    const phoneY = phone.y + (reveal.gapBeforeIndex === 2 ? reveal.gap : 0);
+    const visibleTop = reveal.offset;
+    const visibleBottom = reveal.offset + viewport;
+
+    assert.equal(reveal.gap, 0);
+    assert.ok(name.y >= visibleTop && name.y + name.height <= visibleBottom);
+    assert.ok(email.y >= visibleTop && email.y + email.height <= visibleBottom);
+    assert.ok(phoneY >= visibleBottom);
+    assert.equal(phoneVisiblePx(reveal.offset, viewport, phoneY), 0);
+  });
+
+  it("does not leave a sliced Name or Email when Phone is focused", () => {
+    const viewport = 160;
+    const { name, email, phone } = SHORT_ANDROID_EMAIL_FIELDS;
+    const reveal = revealAddMemberField({
+      fields: [name, email, phone],
+      focusedIndex: 2,
+      viewportHeight: viewport,
+      currentOffset: 0,
+    });
+    const visibleTop = reveal.offset;
+    const visibleBottom = reveal.offset + viewport;
+    const boxes = [name, email, phone].map((box, index) => {
+      const shifted = reveal.gapBeforeIndex != null && index >= reveal.gapBeforeIndex
+        ? { ...box, y: box.y + reveal.gap }
+        : box;
+      return shifted;
+    });
+    assert.ok(boxes[2].y >= visibleTop && boxes[2].y + boxes[2].height <= visibleBottom);
+    for (const box of boxes) {
+      const shown = Math.max(
+        0,
+        Math.min(box.y + box.height, visibleBottom) - Math.max(box.y, visibleTop),
+      );
+      const partial = shown > 1 && shown < box.height - 1;
+      assert.equal(partial, false);
+    }
   });
 });
