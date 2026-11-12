@@ -36,6 +36,13 @@ describe("SEO route content", () => {
     const text = JSON.stringify(page).toLowerCase();
     expect(text).not.toContain("splitwise");
     expect(text).not.toContain("whatsapp");
+    if (!page) throw new Error("missing flatmate page");
+    const pageSpecific = [
+      page.body,
+      ...page.sections.flatMap((section) => [section.heading, section.body, ...section.bullets]),
+      ...page.faqs.flatMap((faq) => [faq.question, faq.answer]),
+    ].join("\n");
+    expect(pageSpecific.toLowerCase()).not.toContain("roommate");
     expect(page?.related).toEqual([
       "roommate-expense-tracker",
       "split-bills",

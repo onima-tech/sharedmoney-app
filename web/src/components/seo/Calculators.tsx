@@ -273,7 +273,6 @@ export function SplitBillResult({
       <ul>
         {result.shares.map((share) => <li key={share.id}><span>{share.name}</span><strong>{formatMoney(share.amountMinor, result.currency)}</strong></li>)}
       </ul>
-      <p className="calculator-result-note">Need to track more than one bill? Start a shared ledger in SharedMoney.</p>
       <CalculatorStoreCtas primaryDestination={primaryDestination} placement="split_bill_result" />
     </output>
   );

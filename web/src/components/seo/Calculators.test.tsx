@@ -43,6 +43,8 @@ describe("calculator result install CTA", () => {
 
     expect(html).toContain("Alex");
     expect(html).toContain("Blair");
+    expect(html).not.toContain("Need to track more than one bill?");
+    expect(html).not.toContain("Start a shared ledger in SharedMoney.");
     expectCalculatorRecordCta(html, "split_bill_result");
   });
 
@@ -60,6 +62,9 @@ describe("calculator result install CTA", () => {
 
     expect(html).toContain("Blair");
     expect(html).toContain("Alex");
+    expect(html).toContain(
+      "This is a clear, greedy repayment plan—not a claim that it uses the fewest possible payments.",
+    );
     expectCalculatorRecordCta(html, "settle_up_result");
   });
 
