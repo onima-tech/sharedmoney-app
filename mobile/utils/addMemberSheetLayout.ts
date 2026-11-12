@@ -1,3 +1,22 @@
+export type AddMemberSheetMode = "chooser" | "create" | "existing";
+
+/**
+ * The method chooser has no text field. A keyboard left open by the create
+ * form or the people search must be dismissed, and the sheet must not lift.
+ */
+export function addMemberModeDismissesKeyboard(mode: AddMemberSheetMode): boolean {
+  return mode === "chooser";
+}
+
+/** Keyboard height the sheet should react to. The chooser always gets 0. */
+export function keyboardHeightForAddMemberMode(
+  mode: AddMemberSheetMode,
+  reportedHeight: number,
+): number {
+  if (addMemberModeDismissesKeyboard(mode)) return 0;
+  return Number.isFinite(reportedHeight) ? Math.max(0, reportedHeight) : 0;
+}
+
 const SHEET_HEIGHT_RATIO = 0.64;
 const SHEET_MAX_HEIGHT = 560;
 /** Ignore sub-pixel keyboard noise and treat the keyboard as closed. */
@@ -158,6 +177,8 @@ export type AddMemberFieldReveal = {
 };
 
 const FIELD_SLIVER_PX = 1;
+/** Extra pixels so a helper line's antialiasing does not remain as a speck. */
+const HELPER_HIDE_BLEED_PX = 4;
 
 function fieldBottom(box: AddMemberFieldBox): number {
   return box.y + box.height;
@@ -206,6 +227,12 @@ export function revealAddMemberField(input: {
   padding?: number;
   /** Indexes that must stay fully visible together with the focused field. */
   alsoVisible?: number[];
+  /**
+   * Helper copy above the fields (the "Add them now…" line). When it is only
+   * partly in the viewport, scroll it fully out instead of leaving a cut line.
+   * Callers pass natural y, in the same coordinates as `fields`.
+   */
+  hidePartialAbove?: AddMemberFieldBox | null;
 }): AddMemberFieldReveal {
   const viewport = input.viewportHeight;
   const current = Math.max(0, input.currentOffset ?? 0);
@@ -284,6 +311,51 @@ export function revealAddMemberField(input: {
     gap = Math.max(0, Math.ceil(offset + viewport - box.y));
     gapBeforeIndex = index;
     break;
+  }
+
+  // Only ever increase the offset here. Showing the helper again would put
+  // the cut line back, and pulling a field back on screen can do the same.
+  const offsetBeforeHelper = offset;
+  const above = input.hidePartialAbove;
+  if (above && above.height > 0) {
+    const shown = visibleFieldPx(
+      { y: above.y, height: above.height + HELPER_HIDE_BLEED_PX },
+      offset,
+      viewport,
+    );
+    if (shown > 0 && shown < above.height + HELPER_HIDE_BLEED_PX) {
+      const hideAt = fieldBottom(above) + HELPER_HIDE_BLEED_PX;
+      if (hideAt >= minOffset && hideAt <= maxOffset && hideAt > offset) {
+        offset = hideAt;
+      }
+    }
+  }
+  if (offset !== offsetBeforeHelper) {
+    for (let index = input.focusedIndex - 1; index >= 0; index -= 1) {
+      if (required.has(index)) continue;
+      const box = input.fields[index];
+      if (!box || fieldVisibility(box, offset, viewport) !== "partial") continue;
+      const hideAt = fieldBottom(box);
+      if (hideAt >= minOffset && hideAt <= maxOffset && hideAt > offset) {
+        offset = hideAt;
+      }
+    }
+  }
+  if (offset !== offsetBeforeHelper) {
+    gap = 0;
+    gapBeforeIndex = null;
+    for (let index = nextIndex; index < input.fields.length; index += 1) {
+      const box = input.fields[index];
+      if (!box || fieldVisibility(box, offset, viewport) !== "partial") continue;
+      const hideAt = box.y - viewport;
+      if (hideAt >= minOffset && hideAt <= maxOffset) {
+        offset = hideAt;
+        break;
+      }
+      gap = Math.max(0, Math.ceil(offset + viewport - box.y));
+      gapBeforeIndex = index;
+      break;
+    }
   }
 
   return { offset: Math.max(0, offset), gap, gapBeforeIndex };

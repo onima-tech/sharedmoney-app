@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  addMemberModeDismissesKeyboard,
   getAddMemberSheetFrame,
+  keyboardHeightForAddMemberMode,
   keyboardLift,
   restingAddMemberSheetHeight,
   revealAddMemberField,
@@ -380,6 +382,85 @@ describe("short Android email focus with the keyboard open", () => {
         0,
         Math.min(box.y + box.height, visibleBottom) - Math.max(box.y, visibleTop),
       );
+      const partial = shown > 1 && shown < box.height - 1;
+      assert.equal(partial, false);
+    }
+  });
+});
+
+function shownPx(
+  box: { y: number; height: number },
+  offset: number,
+  viewport: number,
+): number {
+  const top = Math.max(box.y, offset);
+  const bottom = Math.min(box.y + box.height, offset + viewport);
+  return Math.max(0, bottom - top);
+}
+
+describe("method chooser keyboard", () => {
+  it("dismisses a leftover keyboard and does not lift the sheet", () => {
+    assert.equal(addMemberModeDismissesKeyboard("chooser"), true);
+    assert.equal(addMemberModeDismissesKeyboard("create"), false);
+    assert.equal(addMemberModeDismissesKeyboard("existing"), false);
+    assert.equal(keyboardHeightForAddMemberMode("chooser", IPHONE_SE_KEYBOARD), 0);
+    assert.equal(
+      keyboardHeightForAddMemberMode("create", IPHONE_SE_KEYBOARD),
+      IPHONE_SE_KEYBOARD,
+    );
+    assert.equal(
+      keyboardHeightForAddMemberMode("existing", IPHONE_SE_KEYBOARD),
+      IPHONE_SE_KEYBOARD,
+    );
+
+    const frame = getAddMemberSheetFrame({
+      windowHeight: IPHONE_SE,
+      restingWindowHeight: IPHONE_SE,
+      topInset: IPHONE_SE_TOP,
+      keyboardHeight: keyboardHeightForAddMemberMode("chooser", IPHONE_SE_KEYBOARD),
+      keyboardScreenY: IPHONE_SE - IPHONE_SE_KEYBOARD,
+      fullScreen: false,
+    });
+    assert.equal(frame.keyboardOpen, false);
+    assert.equal(frame.marginBottom, 0);
+    assert.equal(frame.height, restingAddMemberSheetHeight(IPHONE_SE));
+  });
+});
+
+describe("iPhone SE phone focus intro", () => {
+  it("scrolls a clipped helper line fully out without slicing a field", () => {
+    const viewport = 250;
+    const intro = { y: 0, height: 36 };
+    const name = { y: 44, height: 72 };
+    const email = { y: 124, height: 72 };
+    const phone = { y: 204, height: 72 };
+    const fields = [name, email, phone];
+
+    const unfixed = revealAddMemberField({
+      fields,
+      focusedIndex: 2,
+      viewportHeight: viewport,
+      currentOffset: 0,
+    });
+    const clipped = shownPx(intro, unfixed.offset, viewport);
+    assert.ok(
+      clipped > 1 && clipped < intro.height - 1,
+      `fixture must clip the intro, saw ${clipped}px`,
+    );
+
+    const reveal = revealAddMemberField({
+      fields,
+      focusedIndex: 2,
+      viewportHeight: viewport,
+      currentOffset: 0,
+      hidePartialAbove: intro,
+    });
+    assert.equal(shownPx(intro, reveal.offset, viewport), 0);
+    const visibleTop = reveal.offset;
+    const visibleBottom = reveal.offset + viewport;
+    assert.ok(phone.y >= visibleTop && phone.y + phone.height <= visibleBottom);
+    for (const box of fields) {
+      const shown = shownPx(box, reveal.offset, viewport);
       const partial = shown > 1 && shown < box.height - 1;
       assert.equal(partial, false);
     }

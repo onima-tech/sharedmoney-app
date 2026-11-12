@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -48,7 +49,9 @@ import {
 import { captureIdentifiedAnalyticsEvent } from "../utils/posthogAnalytics";
 import { ANALYTICS_EVENTS } from "../utils/posthogEvents";
 import {
+  addMemberModeDismissesKeyboard,
   getAddMemberSheetFrame,
+  keyboardHeightForAddMemberMode,
   revealAddMemberField,
 } from "../utils/addMemberSheetLayout";
 
@@ -127,6 +130,9 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
   const [fieldLayouts, setFieldLayouts] = useState<
     Partial<Record<AddPersonField, { y: number; height: number }>>
   >({});
+  const [introLayout, setIntroLayout] = useState<{ y: number; height: number } | null>(
+    null,
+  );
   const [followerGap, setFollowerGap] = useState<FollowerGap | null>(null);
   const [scrollViewportHeight, setScrollViewportHeight] = useState(0);
   const scrollRef = useRef<ScrollView>(null);
@@ -180,8 +186,22 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
     );
   }, [profile?.country_code, visible]);
 
-  const handleDismiss = () => {
+  // The chooser has no text field. Dismiss a keyboard left open by the form
+  // or the search box, including when this sheet opens already on the chooser.
+  useEffect(() => {
+    if (!visible || !addMemberModeDismissesKeyboard(mode)) return;
+    setFocusedField(null);
+    Keyboard.dismiss();
+  }, [visible, mode]);
+
+  const showChooser = () => {
+    setFocusedField(null);
+    if (addMemberModeDismissesKeyboard("chooser")) Keyboard.dismiss();
     setMode("chooser");
+  };
+
+  const handleDismiss = () => {
+    showChooser();
     setFullName("");
     setEmail("");
     setEmailError(null);
@@ -376,11 +396,19 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
     windowHeight: keyboard.windowHeight,
     restingWindowHeight: keyboard.restingWindowHeight,
     topInset: insets.top,
-    keyboardHeight: mode === "chooser" ? 0 : keyboard.frame.height,
+    keyboardHeight: keyboardHeightForAddMemberMode(mode, keyboard.frame.height),
     keyboardScreenY: keyboard.frame.screenY,
     fullScreen: isExistingPicker,
   });
   const bottomSheetHeight = sheetFrame.height;
+
+  const rememberIntroLayout = (event: LayoutChangeEvent) => {
+    const { y, height } = event.nativeEvent.layout;
+    setIntroLayout((prev) => {
+      if (prev && prev.y === y && prev.height === height) return prev;
+      return { y, height };
+    });
+  };
 
   const rememberFieldLayout = (field: AddPersonField) =>
     (event: LayoutChangeEvent) => {
@@ -420,6 +448,9 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
       Math.round(name.height),
       Math.round(email.height),
       Math.round(phone.height),
+      focusedField === "phone" && introLayout
+        ? `${Math.round(introLayout.y)}:${Math.round(introLayout.height)}`
+        : "",
     ].join(":");
     if (revealKey.current === key) {
       scrollRef.current?.scrollTo({ y: lockedScrollOffset.current, animated: false });
@@ -444,6 +475,7 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
       fields: [name, email, phone],
       focusedIndex: ADD_PERSON_FIELDS.indexOf(focusedField),
       alsoVisible: focusedField === "email" ? [0] : [],
+      hidePartialAbove: focusedField === "phone" ? introLayout : null,
       viewportHeight: scrollViewportHeight,
       currentOffset: scrollOffset.current,
     });
@@ -465,6 +497,7 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
     fieldLayouts,
     scrollViewportHeight,
     followerGap,
+    introLayout,
   ]);
 
   const followerSpacer = (before: AddPersonField) => (
@@ -519,7 +552,7 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
             ? (
               <View style={styles.pickerContent}>
                 <Appbar.Header style={styles.header}>
-                  <Appbar.BackAction onPress={() => setMode("chooser")} />
+                  <Appbar.BackAction onPress={showChooser} />
                   <Appbar.Content
                     title="Choose existing person"
                     titleStyle={styles.title}
@@ -646,7 +679,7 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
                 </View>
                 <Appbar.Header style={styles.header}>
                   {mode === "create" && (
-                    <Appbar.BackAction onPress={() => setMode("chooser")} />
+                    <Appbar.BackAction onPress={showChooser} />
                   )}
                   <Appbar.Content
                     title="Add people"
@@ -729,14 +762,16 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
                           );
                         }}
                       >
-                        <Text
-                          style={[styles.subtitle, {
-                            color: theme.colors.onSurfaceVariant,
-                          }]}
-                        >
-                          Add them now and include them in expenses. Email is
-                          optional.
-                        </Text>
+                        <View collapsable={false} onLayout={rememberIntroLayout}>
+                          <Text
+                            style={[styles.subtitle, {
+                              color: theme.colors.onSurfaceVariant,
+                            }]}
+                          >
+                            Add them now and include them in expenses. Email is
+                            optional.
+                          </Text>
+                        </View>
                         <View
                           collapsable={false}
                           onLayout={rememberFieldLayout("name")}
