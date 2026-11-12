@@ -1,6 +1,7 @@
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { sitemapLocPath, sitemapLocsMatchingRedirects } from "../src/sitemapRedirects.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distDir = path.resolve(__dirname, "../dist");
@@ -140,13 +141,42 @@ for (const page of pages) {
 }
 
 const sitemap = await readFile(path.join(distDir, "sitemap.xml"), "utf8");
+const vercel = JSON.parse(await readFile(path.resolve(__dirname, "../../vercel.json"), "utf8"));
+const redirects = Array.isArray(vercel.redirects) ? vercel.redirects : [];
+const sitemapLocs = [...sitemap.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => match[1]);
 for (const page of pages) {
   report(sitemap.includes(`<loc>${pageUrl(page)}</loc><lastmod>${page.updated}</lastmod>`), `${page.path}: missing sitemap entry or lastmod.`);
 }
 report(
-  sitemap.includes(`<loc>${siteUrl}/faq</loc><lastmod>${homePage?.updated}</lastmod>`),
-  "/faq: missing sitemap entry or lastmod.",
+  sitemapLocs.every((loc) => sitemapLocPath(loc) !== "/faq"),
+  "/faq must not be listed in the sitemap; it redirects to /#faq.",
 );
+const redirectLocs = sitemapLocsMatchingRedirects(sitemapLocs, redirects);
+report(
+  redirectLocs.length === 0,
+  `Sitemap must list canonical URLs only. Redirect sources found: ${redirectLocs.join(", ")}`,
+);
+for (const splitwisePath of ["/splitwise-alternative", "/in/splitwise-alternative"]) {
+  const page = pages.find((candidate) => candidate.path === splitwisePath);
+  report(Boolean(page), `${splitwisePath} must remain an indexable route.`);
+  if (!page) continue;
+  report(
+    sitemap.includes(`<loc>${pageUrl(page)}</loc><lastmod>${page.updated}</lastmod>`),
+    `${splitwisePath}: must remain in the sitemap with its lastmod.`,
+  );
+  const filePath = outputPath(page);
+  try {
+    await access(filePath);
+  } catch {
+    failures.push(`${splitwisePath}: missing generated page.`);
+    continue;
+  }
+  const html = await readFile(filePath, "utf8");
+  report(
+    html.includes(`<link rel="canonical" href="${pageUrl(page)}" />`),
+    `${splitwisePath}: must keep a self-canonical.`,
+  );
+}
 
 const notFound = await readFile(path.join(distDir, "404.html"), "utf8");
 report(notFound.includes('name="robots" content="noindex,follow"'), "404 page must be noindex.");

@@ -285,12 +285,9 @@ for (const page of pages) {
   await writeFile(path.join(targetDir, "index.html"), html);
 }
 
-const homeUpdated = pages.find((page) => page.path === "/")?.updated;
-const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${[
-  ...pages.map((page) => `  <url><loc>${pageUrl(page.path)}</loc><lastmod>${page.updated}</lastmod></url>`),
-  // /faq 308s to /#faq. Directories and crawlers still need the stable URL listed.
-  `  <url><loc>${siteUrl}/faq</loc><lastmod>${homeUpdated}</lastmod></url>`,
-].join("\n")}\n</urlset>\n`;
+const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages
+  .map((page) => `  <url><loc>${pageUrl(page.path)}</loc><lastmod>${page.updated}</lastmod></url>`)
+  .join("\n")}\n</urlset>\n`;
 
 await writeFile(path.join(distDir, "sitemap.xml"), sitemap);
 await writeFile(path.join(distDir, "404.html"), notFoundMarkup(template));

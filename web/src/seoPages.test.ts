@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
+import vercelConfig from "../../vercel.json";
+import { sitemapLocsMatchingRedirects } from "./sitemapRedirects.mjs";
 import { normalizeSeoPath, pageByPath, relatedPages, seoPages } from "./seoPages";
+
+function sitemapLoc(pagePath: string) {
+  return `https://sharedmoney.app${pagePath === "/" ? "" : pagePath}`;
+}
 
 describe("SEO route content", () => {
   it("has the approved ten indexable routes", () => {
@@ -62,5 +68,49 @@ describe("SEO route content", () => {
       "group-expense-tracker",
       "roommate-expense-tracker",
     ]);
+  });
+});
+
+describe("sitemap redirect exclusion", () => {
+  it("keeps indexable routes, including the Splitwise alternatives, off redirect sources", () => {
+    const locs = seoPages.map((page) => sitemapLoc(page.path));
+    expect(locs).toEqual(
+      expect.arrayContaining([
+        "https://sharedmoney.app/splitwise-alternative",
+        "https://sharedmoney.app/in/splitwise-alternative",
+      ]),
+    );
+    expect(sitemapLocsMatchingRedirects(locs, vercelConfig.redirects)).toEqual([]);
+  });
+
+  it("rejects /faq because vercel.json redirects it, including the trailing-slash form", () => {
+    expect(
+      sitemapLocsMatchingRedirects(
+        ["https://sharedmoney.app/faq", "https://sharedmoney.app/faq/"],
+        vercelConfig.redirects,
+      ),
+    ).toEqual(["https://sharedmoney.app/faq", "https://sharedmoney.app/faq/"]);
+  });
+
+  it("ignores host-conditioned www redirects and matches other sources without a trailing slash", () => {
+    const redirects = [
+      {
+        source: "/privacy",
+        has: [{ type: "host", value: "www.sharedmoney.app" }],
+        destination: "https://sharedmoney.app/privacy",
+        permanent: true,
+      },
+      {
+        source: "/help/",
+        destination: "/support",
+        permanent: true,
+      },
+    ];
+    expect(
+      sitemapLocsMatchingRedirects(
+        ["https://sharedmoney.app/privacy", "https://sharedmoney.app/help"],
+        redirects,
+      ),
+    ).toEqual(["https://sharedmoney.app/help"]);
   });
 });
