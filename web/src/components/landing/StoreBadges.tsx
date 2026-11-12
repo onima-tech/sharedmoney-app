@@ -35,9 +35,11 @@ const badgeAssets: Record<
 export function StoreBadgeLink({
   destination,
   placement,
+  source,
 }: {
   destination: PlatformDestination;
   placement: string;
+  source?: string;
 }) {
   if (destination.platform === "web") {
     return null;
@@ -54,6 +56,7 @@ export function StoreBadgeLink({
       data-seo-cta=""
       data-platform={destination.platform}
       data-placement={placement}
+      data-source={source}
       onClick={(event) => trackCtaClick(destination, placement, event.currentTarget)}
     >
       <img
@@ -72,9 +75,11 @@ export function StoreBadgeLink({
 export function StoreBadges({
   placement,
   preferPlatform,
+  source,
 }: {
   placement: string;
   preferPlatform?: Platform;
+  source?: string;
 }) {
   const ordered =
     preferPlatform === "ios"
@@ -88,6 +93,7 @@ export function StoreBadges({
           key={destination.platform}
           destination={destination}
           placement={`${placement}_${destination.platform}`}
+          source={source}
         />
       ))}
     </div>

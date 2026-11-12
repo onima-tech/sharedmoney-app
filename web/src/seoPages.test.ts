@@ -8,19 +8,45 @@ function sitemapLoc(pagePath: string) {
 }
 
 describe("SEO route content", () => {
-  it("has the approved ten indexable routes", () => {
-    expect(seoPages).toHaveLength(10);
+  it("has the approved eleven indexable routes", () => {
+    expect(seoPages).toHaveLength(11);
     expect([...pageByPath.keys()]).toEqual([
       "/",
       "/split-bills",
       "/group-expense-tracker",
       "/trip-expense-splitter",
       "/roommate-expense-tracker",
+      "/flatmate-expense-tracker",
       "/splitwise-alternative",
       "/in/splitwise-alternative",
       "/tools",
       "/tools/split-bill-calculator",
       "/tools/settle-up-calculator",
+    ]);
+  });
+
+  it("adds a flatmate landing page for India and UK searches", () => {
+    const page = pageByPath.get("/flatmate-expense-tracker");
+    expect(page?.kind).toBe("page");
+    expect(page?.heading).toBe("Flatmate costs, kept calm.");
+    expect(page?.lead).toBe("No daily limits, no ads, no bank link.");
+    expect(page?.description).toContain("No daily limits, no ads, no bank link.");
+    expect(page?.body).toContain("India and the UK");
+    expect(page?.body.toLowerCase()).toContain("upi or bank transfer");
+    const text = JSON.stringify(page).toLowerCase();
+    expect(text).not.toContain("splitwise");
+    expect(text).not.toContain("whatsapp");
+    if (!page) throw new Error("missing flatmate page");
+    const pageSpecific = [
+      page.body,
+      ...page.sections.flatMap((section) => [section.heading, section.body, ...section.bullets]),
+      ...page.faqs.flatMap((faq) => [faq.question, faq.answer]),
+    ].join("\n");
+    expect(pageSpecific.toLowerCase()).not.toContain("roommate");
+    expect(page?.related).toEqual([
+      "roommate-expense-tracker",
+      "split-bills",
+      "settle-up-calculator",
     ]);
   });
 
@@ -78,8 +104,10 @@ describe("sitemap redirect exclusion", () => {
       expect.arrayContaining([
         "https://sharedmoney.app/splitwise-alternative",
         "https://sharedmoney.app/in/splitwise-alternative",
+        "https://sharedmoney.app/flatmate-expense-tracker",
       ]),
     );
+    expect(locs.some((loc) => loc.includes("/faq"))).toBe(false);
     expect(sitemapLocsMatchingRedirects(locs, vercelConfig.redirects)).toEqual([]);
   });
 

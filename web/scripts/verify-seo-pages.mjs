@@ -28,7 +28,7 @@ function pageUrl(page) {
   return `${siteUrl}${page.path === "/" ? "" : page.path}`;
 }
 
-report(pages.length === 10, `Expected 10 indexable routes, found ${pages.length}.`);
+report(pages.length === 11, `Expected 11 indexable routes, found ${pages.length}.`);
 report(new Set(pages.map((page) => page.path)).size === pages.length, "SEO paths must be unique.");
 
 const playStoreUrl =
@@ -150,6 +150,10 @@ for (const page of pages) {
 report(
   sitemapLocs.every((loc) => sitemapLocPath(loc) !== "/faq"),
   "/faq must not be listed in the sitemap; it redirects to /#faq.",
+);
+report(
+  sitemap.includes("<loc>https://sharedmoney.app/flatmate-expense-tracker</loc>"),
+  "/flatmate-expense-tracker must be listed in the sitemap.",
 );
 const redirectLocs = sitemapLocsMatchingRedirects(sitemapLocs, redirects);
 report(

@@ -294,6 +294,59 @@
     ]
   },
   {
+    "id": "flatmate-expense-tracker",
+    "path": "/flatmate-expense-tracker",
+    "kind": "page",
+    "region": "global",
+    "updated": "2026-11-12",
+    "title": "Flatmate Expense Tracker for Rent and Utilities | SharedMoney",
+    "description": "Track rent, utilities, and groceries with flatmates in India and the UK. Settle on UPI or bank transfer. No daily limits, no ads, no bank link.",
+    "eyebrow": "Flatmate expenses",
+    "heading": "Flatmate costs, kept calm.",
+    "lead": "No daily limits, no ads, no bank link.",
+    "body": "Rent, utilities, and groceries can be tracked as they happen, so flatmates in India and the UK do not have to reconstruct the month later. When a balance is clear, settle on UPI or bank transfer.",
+    "proof": [
+      "Rent, utilities, and groceries",
+      "Settle on UPI or bank transfer",
+      "No bank link"
+    ],
+    "sections": [
+      {
+        "heading": "A calmer monthly reset",
+        "body": "Shared household costs are easier to discuss when the record is complete. Use one group for the bills that matter and review balances before they turn into a memory test.",
+        "bullets": [
+          "Rent and utilities",
+          "Groceries and shared supplies",
+          "Equal or uneven splits"
+        ]
+      },
+      {
+        "heading": "Settle on UPI or bank transfer",
+        "body": "SharedMoney does not link a bank account or send the payment. When the group agrees on a balance, flatmates settle on UPI or bank transfer and can record that settlement in the ledger.",
+        "bullets": [
+          "No bank link",
+          "UPI or bank transfer, outside the app",
+          "A record remains after the group settles"
+        ]
+      }
+    ],
+    "faqs": [
+      {
+        "question": "Can flatmates use it for rent, utilities, and groceries?",
+        "answer": "Yes. A household group can hold rent, utilities, groceries, and other shared costs, with equal or uneven splits."
+      },
+      {
+        "question": "Does it link a bank account or send the payment?",
+        "answer": "No. There is no bank link. Flatmates settle on UPI or bank transfer outside the app, then can record the settlement in the shared ledger."
+      }
+    ],
+    "related": [
+      "roommate-expense-tracker",
+      "split-bills",
+      "settle-up-calculator"
+    ]
+  },
+  {
     "id": "splitwise-alternative",
     "path": "/splitwise-alternative",
     "kind": "page",

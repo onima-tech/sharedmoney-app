@@ -7,4 +7,9 @@ describe("site footer", () => {
     const html = renderToStaticMarkup(<Footer />);
     expect(html).toMatch(/<a href="\/faq">FAQ<\/a>/);
   });
+
+  it("links the flatmate landing page", () => {
+    const html = renderToStaticMarkup(<Footer />);
+    expect(html).toMatch(/<a href="\/flatmate-expense-tracker">Flatmate expenses<\/a>/);
+  });
 });

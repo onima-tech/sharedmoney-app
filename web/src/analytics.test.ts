@@ -3,6 +3,7 @@ import {
   findDestinationForPlatform,
   marketingPostHogClientOptions,
   sanitizeMarketingCapture,
+  seoCtaClickedEvent,
 } from "./analytics";
 
 describe("SSR CTA destination resolution", () => {
@@ -32,6 +33,38 @@ describe("SSR CTA destination resolution", () => {
       event: "$pageview",
       properties: { $current_url: "https://sharedmoney.app/split/:token" },
     });
+  });
+
+  it("fires seo cta clicked with source=calculator for calculator results", () => {
+    expect(
+      seoCtaClickedEvent({
+        platform: "android",
+        placement: "split_bill_result_android",
+        device: "desktop",
+        pagePath: "/tools/split-bill-calculator",
+        source: "calculator",
+      }),
+    ).toEqual({
+      event: "seo cta clicked",
+      properties: {
+        platform: "android",
+        placement: "split_bill_result_android",
+        device: "desktop",
+        page_path: "/tools/split-bill-calculator",
+        source: "calculator",
+      },
+    });
+  });
+
+  it("omits source on CTAs that are not calculator results", () => {
+    const tracked = seoCtaClickedEvent({
+      platform: "web",
+      placement: "header",
+      device: "desktop",
+      pagePath: "/",
+    });
+    expect(tracked.event).toBe("seo cta clicked");
+    expect(tracked.properties).not.toHaveProperty("source");
   });
 
   it("rejects unknown or missing platforms", () => {

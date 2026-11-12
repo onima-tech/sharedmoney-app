@@ -6,13 +6,17 @@ import {
   calculateBillSplit,
   calculateSettlementPlan,
   type BillSplitParticipant,
+  type BillSplitResult,
   type SettlementParticipant,
+  type SettlementPlan,
 } from "../../utils/calculators";
 import { CURRENCY_CODES } from "../../utils/isoCurrencies";
 import { PlatformCta } from "../landing/PlatformCta";
 import { StoreBadges } from "../landing/StoreBadges";
 
 const webDestination = platformDestinations.find((destination) => destination.platform === "web")!;
+
+export const calculatorRecordCta = "Keep this as a shared record for the group";
 
 function CalculatorStoreCtas({
   primaryDestination,
@@ -23,8 +27,18 @@ function CalculatorStoreCtas({
 }) {
   return (
     <div className="calculator-store-ctas">
-      <StoreBadges placement={placement} preferPlatform={primaryDestination.platform} />
-      <PlatformCta destination={webDestination} placement={`${placement}_web`} appearance="text" />
+      <p className="calculator-result-note">{calculatorRecordCta}</p>
+      <StoreBadges
+        placement={placement}
+        preferPlatform={primaryDestination.platform}
+        source="calculator"
+      />
+      <PlatformCta
+        destination={webDestination}
+        placement={`${placement}_web`}
+        appearance="text"
+        source="calculator"
+      />
     </div>
   );
 }
@@ -151,14 +165,7 @@ function BillSplitCalculator({ primaryDestination }: { primaryDestination: Platf
       <button className="cta cta-primary calculator-submit" type="submit">Calculate split</button>
       {error ? <p className="calculator-error" role="alert">{error}</p> : null}
       {result ? (
-        <output className="calculator-result" aria-live="polite">
-          <p>Total bill <strong>{formatMoney(result.totalMinor, result.currency)}</strong></p>
-          <ul>
-            {result.shares.map((share) => <li key={share.id}><span>{share.name}</span><strong>{formatMoney(share.amountMinor, result.currency)}</strong></li>)}
-          </ul>
-          <p className="calculator-result-note">Need to track more than one bill? Start a shared ledger in SharedMoney.</p>
-          <CalculatorStoreCtas primaryDestination={primaryDestination} placement="split_bill_result" />
-        </output>
+        <SplitBillResult result={result} primaryDestination={primaryDestination} />
       ) : null}
     </form>
   );
@@ -247,16 +254,46 @@ function SettleUpCalculator({ primaryDestination }: { primaryDestination: Platfo
       <button className="cta cta-primary calculator-submit" type="submit">Create repayment plan</button>
       {error ? <p className="calculator-error" role="alert">{error}</p> : null}
       {result ? (
-        <output className="calculator-result" aria-live="polite">
-          <p>Suggested payments</p>
-          <ul>
-            {result.transfers.length === 0 ? <li><span>Everyone is already settled.</span></li> : result.transfers.map((transfer, index) => <li key={`${transfer.from}-${transfer.to}-${index}`}><span><strong>{transfer.from}</strong> pays <strong>{transfer.to}</strong></span><strong>{formatMoney(transfer.amountMinor, result.currency)}</strong></li>)}
-          </ul>
-          <p className="calculator-result-note">This is a clear, greedy repayment plan—not a claim that it uses the fewest possible payments.</p>
-          <CalculatorStoreCtas primaryDestination={primaryDestination} placement="settle_up_result" />
-        </output>
+        <SettleUpResult result={result} primaryDestination={primaryDestination} />
       ) : null}
     </form>
+  );
+}
+
+export function SplitBillResult({
+  result,
+  primaryDestination,
+}: {
+  result: BillSplitResult;
+  primaryDestination: PlatformDestination;
+}) {
+  return (
+    <output className="calculator-result" aria-live="polite">
+      <p>Total bill <strong>{formatMoney(result.totalMinor, result.currency)}</strong></p>
+      <ul>
+        {result.shares.map((share) => <li key={share.id}><span>{share.name}</span><strong>{formatMoney(share.amountMinor, result.currency)}</strong></li>)}
+      </ul>
+      <CalculatorStoreCtas primaryDestination={primaryDestination} placement="split_bill_result" />
+    </output>
+  );
+}
+
+export function SettleUpResult({
+  result,
+  primaryDestination,
+}: {
+  result: SettlementPlan;
+  primaryDestination: PlatformDestination;
+}) {
+  return (
+    <output className="calculator-result" aria-live="polite">
+      <p>Suggested payments</p>
+      <ul>
+        {result.transfers.length === 0 ? <li><span>Everyone is already settled.</span></li> : result.transfers.map((transfer, index) => <li key={`${transfer.from}-${transfer.to}-${index}`}><span><strong>{transfer.from}</strong> pays <strong>{transfer.to}</strong></span><strong>{formatMoney(transfer.amountMinor, result.currency)}</strong></li>)}
+      </ul>
+      <p className="calculator-result-note">This is a clear, greedy repayment plan—not a claim that it uses the fewest possible payments.</p>
+      <CalculatorStoreCtas primaryDestination={primaryDestination} placement="settle_up_result" />
+    </output>
   );
 }
 

@@ -22,6 +22,7 @@ export function PlatformCta({
   compactLabel,
   showStatus = false,
   className,
+  source,
 }: {
   destination: PlatformDestination;
   placement: string;
@@ -29,6 +30,7 @@ export function PlatformCta({
   compactLabel?: string;
   showStatus?: boolean;
   className?: string;
+  source?: string;
 }) {
   return (
     <a
@@ -40,6 +42,7 @@ export function PlatformCta({
       data-seo-cta=""
       data-platform={destination.platform}
       data-placement={placement}
+      data-source={source}
       onClick={(event) => trackCtaClick(destination, placement, event.currentTarget)}
     >
       <PlatformIcon platform={destination.platform} />
