@@ -40,6 +40,12 @@
  * - `invite_link_shared` — system share sheet / clipboard copy of the link
  * - `member_invited` — email invite sent via participants invite API
  *
+ * Logged-out web invite landing (`/app/join/:token` shell). Never include the
+ * token, group name, member names, balances, emails, or phone numbers:
+ * - `invite_landing_viewed` — props: `source=invite_join`
+ * - `invite_landing_cta_clicked` — props: `source=invite_join`,
+ *   `cta` (`play` | `app_store` | `open_app` | `web_app`)
+ *
  * Supporting: `mobile_app_opened`, `mobile_screen_viewed`, `group_archived`,
  * `group_unarchived`, `group_hidden_from_lists`, `group_updated`,
  * `group_list_scroll` (sampled FlatList perf), `group_list_page_loaded`,
@@ -66,6 +72,8 @@ export const ANALYTICS_EVENTS = {
   INVITE_LINK_CREATED: "invite_link_created",
   INVITE_LINK_SHARED: "invite_link_shared",
   MEMBER_INVITED: "member_invited",
+  INVITE_LANDING_VIEWED: "invite_landing_viewed",
+  INVITE_LANDING_CTA_CLICKED: "invite_landing_cta_clicked",
   MOBILE_APP_OPENED: "mobile_app_opened",
   MOBILE_SCREEN_VIEWED: "mobile_screen_viewed",
   GROUP_ARCHIVED: "group_archived",

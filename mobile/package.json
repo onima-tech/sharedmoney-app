@@ -20,6 +20,7 @@
     "test:android-push-config": "node --test config/androidPushConfig.test.cjs",
     "test:sentry-build-config": "node --test config/sentryBuildConfig.test.cjs",
     "test:expo-public-config": "node --test config/expoPublicConfig.test.cjs",
+    "test:web-join-rewrite": "node --test config/webJoinRewrite.test.cjs",
     "test:ios-scene-lifecycle": "node --test plugins/withIosSceneLifecycle.test.cjs",
     "test:icon-imports": "node scripts/verify-icon-imports.mjs",
     "verify:android-push-config": "node scripts/verify-android-push-config.cjs",
@@ -28,7 +29,7 @@
     "verify:canonical-links": "node scripts/verify-canonical-links.mjs",
     "android:release": "eas submit --platform android --profile internal",
     "deploy:web": "npx expo export -p web && eas deploy --prod --non-interactive",
-    "export:web:sharedmoney": "EXPO_NO_TELEMETRY=1 EXPO_PUBLIC_APP_URL=https://sharedmoney.app/app EXPO_PUBLIC_WEB_BASE_URL=/app npx expo export -p web --output-dir ../web/dist/app --max-workers 1 && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/inject-web-auth-shell.ts"
+    "export:web:sharedmoney": "EXPO_NO_TELEMETRY=1 EXPO_PUBLIC_APP_URL=https://sharedmoney.app/app EXPO_PUBLIC_WEB_BASE_URL=/app npx expo export -p web --output-dir ../web/dist/app --max-workers 1 && node --experimental-strip-types --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --import ./scripts/register-ts-extension.mjs scripts/inject-web-auth-shell.ts"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

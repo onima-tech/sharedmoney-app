@@ -19,6 +19,11 @@ Deno.test("invite growth loop event names stay stable", () => {
   assertEquals(ANALYTICS_EVENTS.INVITE_LINK_CREATED, "invite_link_created");
   assertEquals(ANALYTICS_EVENTS.INVITE_LINK_SHARED, "invite_link_shared");
   assertEquals(ANALYTICS_EVENTS.MEMBER_INVITED, "member_invited");
+  assertEquals(ANALYTICS_EVENTS.INVITE_LANDING_VIEWED, "invite_landing_viewed");
+  assertEquals(
+    ANALYTICS_EVENTS.INVITE_LANDING_CTA_CLICKED,
+    "invite_landing_cta_clicked",
+  );
 });
 
 Deno.test("expense event is expense_created, not expense_added", () => {

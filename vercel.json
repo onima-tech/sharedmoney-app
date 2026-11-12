@@ -185,6 +185,10 @@
       "destination": "/support.html"
     },
     {
+      "source": "/app/join/:token",
+      "destination": "/app/join.html"
+    },
+    {
       "source": "/app",
       "destination": "/app/index.html"
     },

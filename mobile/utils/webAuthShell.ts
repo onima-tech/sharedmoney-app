@@ -11,6 +11,8 @@
  * the HTML title remains the largest text.
  */
 
+import { isInviteJoinPath } from "./webJoinShell";
+
 export const WEB_AUTH_SHELL_ATTR = "data-sm-auth-shell";
 export const WEB_AUTH_SHELL_ID = "sm-auth-shell";
 export const WEB_AUTH_SHELL_TITLE = "Log in to SharedMoney";
@@ -42,7 +44,9 @@ export function shouldPaintWebAuthShell(input: {
   search: string;
   hash: string;
   storageEntries: readonly WebAuthShellStorageEntry[];
+  pathname?: string;
 }): boolean {
+  if (isInviteJoinPath(input.pathname ?? "")) return false;
   if (hasOAuthCallback(input.search, input.hash)) return false;
   if (hasStoredAuthSession(input.storageEntries)) return false;
   return true;
@@ -95,7 +99,7 @@ export function dismissWebAuthShell(): void {
 }
 
 export function webAuthShellBootstrapScript(): string {
-  return `(function(){try{var params=new URLSearchParams(location.search);var hash=location.hash||"";var oauth=params.has("code")||params.has("error")||hash.indexOf("access_token")!==-1||hash.indexOf("refresh_token")!==-1||hash.indexOf("error_description")!==-1;var hasSession=false;if(!oauth){for(var i=0;i<localStorage.length;i++){var key=localStorage.key(i);if(!key||key.indexOf("auth-token")===-1)continue;var raw=localStorage.getItem(key);if(raw&&raw.indexOf("access_token")!==-1){hasSession=true;break;}}}var paint=!oauth&&!hasSession;document.documentElement.setAttribute("${WEB_AUTH_SHELL_ATTR}",paint?"1":"0");if(!paint)return;var pref=localStorage.getItem("sharedmoney.themePreference")||localStorage.getItem("owewho.themePreference");var landing=null;try{landing=sessionStorage.getItem("theme");}catch(err){}var theme=landing==="light"||landing==="dark"?landing:(pref==="light"||pref==="dark"?pref:null);if(theme==="dark")document.documentElement.classList.add("sm-auth-dark");if(theme==="light")document.documentElement.classList.add("sm-auth-light");}catch(e){document.documentElement.setAttribute("${WEB_AUTH_SHELL_ATTR}","1");}})();`;
+  return `(function(){try{var path=location.pathname||"";var join=/(?:^|\\/)(?:app\\/)?join\\/[^/?#]+/.test(path);var params=new URLSearchParams(location.search);var hash=location.hash||"";var oauth=params.has("code")||params.has("error")||hash.indexOf("access_token")!==-1||hash.indexOf("refresh_token")!==-1||hash.indexOf("error_description")!==-1;var hasSession=false;if(!join&&!oauth){for(var i=0;i<localStorage.length;i++){var key=localStorage.key(i);if(!key||key.indexOf("auth-token")===-1)continue;var raw=localStorage.getItem(key);if(raw&&raw.indexOf("access_token")!==-1){hasSession=true;break;}}}var paint=!oauth&&!hasSession&&!join;document.documentElement.setAttribute("${WEB_AUTH_SHELL_ATTR}",paint?"1":"0");if(!paint)return;var pref=localStorage.getItem("sharedmoney.themePreference")||localStorage.getItem("owewho.themePreference");var landing=null;try{landing=sessionStorage.getItem("theme");}catch(err){}var theme=landing==="light"||landing==="dark"?landing:(pref==="light"||pref==="dark"?pref:null);if(theme==="dark")document.documentElement.classList.add("sm-auth-dark");if(theme==="light")document.documentElement.classList.add("sm-auth-light");}catch(e){var joinPath=false;try{joinPath=/(?:^|\\/)(?:app\\/)?join\\/[^/?#]+/.test(location.pathname||"");}catch(err){}document.documentElement.setAttribute("${WEB_AUTH_SHELL_ATTR}",joinPath?"0":"1");}})();`;
 }
 
 function shellMark(logoSrc?: string): string {
