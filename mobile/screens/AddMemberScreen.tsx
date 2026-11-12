@@ -1,9 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
-  Dimensions,
-  KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -11,6 +10,7 @@ import {
   Share,
   StyleSheet,
   View,
+  type LayoutChangeEvent,
 } from "react-native";
 import {
   ActivityIndicator,
@@ -23,6 +23,7 @@ import {
 } from "react-native-paper";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WEB_MAX_WIDTH } from "../constants/layout";
+import { useKeyboardOverlap } from "../hooks/useKeyboardOverlap";
 import { CountryCodePicker } from "../components/CountryCodePicker";
 import { useAuth } from "../contexts/AuthContext";
 import { useCreateGroupShareLink } from "../hooks/useGroupInvitations";
@@ -47,6 +48,12 @@ import {
 } from "../utils/phoneValidation";
 import { captureIdentifiedAnalyticsEvent } from "../utils/posthogAnalytics";
 import { ANALYTICS_EVENTS } from "../utils/posthogEvents";
+import {
+  addMemberModeDismissesKeyboard,
+  getAddMemberSheetFrame,
+  keyboardHeightForAddMemberMode,
+  revealAddMemberField,
+} from "../utils/addMemberSheetLayout";
 
 interface AddMemberScreenProps {
   visible: boolean;
@@ -64,6 +71,14 @@ interface AddMemberScreenProps {
 }
 
 type SheetMode = "chooser" | "create" | "existing";
+type AddPersonField = "name" | "email" | "phone";
+
+const ADD_PERSON_FIELDS: AddPersonField[] = ["name", "email", "phone"];
+
+type FollowerGap = {
+  before: AddPersonField;
+  height: number;
+};
 
 const LINK_MAX_USES = 10;
 const LINK_VALID_DAYS = 30;
@@ -111,9 +126,24 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
   const [loading, setLoading] = useState(false);
   const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [slideAnim] = useState(new Animated.Value(0));
+  const [focusedField, setFocusedField] = useState<AddPersonField | null>(null);
+  const [fieldLayouts, setFieldLayouts] = useState<
+    Partial<Record<AddPersonField, { y: number; height: number }>>
+  >({});
+  const [introLayout, setIntroLayout] = useState<{ y: number; height: number } | null>(
+    null,
+  );
+  const [followerGap, setFollowerGap] = useState<FollowerGap | null>(null);
+  const [scrollViewportHeight, setScrollViewportHeight] = useState(0);
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollOffset = useRef(0);
+  const lockedScrollOffset = useRef(0);
+  const layoutEpoch = useRef(0);
+  const revealKey = useRef("");
+  const waitForLayoutEpoch = useRef<number | null>(null);
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const screenHeight = Dimensions.get("window").height;
+  const keyboard = useKeyboardOverlap(visible);
   const { signOut, user } = useAuth();
   const { data: profile } = useProfile();
   const createShareLink = useCreateGroupShareLink();
@@ -156,8 +186,22 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
     );
   }, [profile?.country_code, visible]);
 
-  const handleDismiss = () => {
+  // The chooser has no text field. Dismiss a keyboard left open by the form
+  // or the search box, including when this sheet opens already on the chooser.
+  useEffect(() => {
+    if (!visible || !addMemberModeDismissesKeyboard(mode)) return;
+    setFocusedField(null);
+    Keyboard.dismiss();
+  }, [visible, mode]);
+
+  const showChooser = () => {
+    setFocusedField(null);
+    if (addMemberModeDismissesKeyboard("chooser")) Keyboard.dismiss();
     setMode("chooser");
+  };
+
+  const handleDismiss = () => {
+    showChooser();
     setFullName("");
     setEmail("");
     setEmailError(null);
@@ -166,6 +210,7 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
     setShowCountryPicker(false);
     setSearch("");
     setInviteLink(null);
+    setFocusedField(null);
     onDismiss();
   };
 
@@ -343,9 +388,136 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
   };
 
   const isExistingPicker = mode === "existing";
-  const bottomSheetHeight = isExistingPicker
-    ? screenHeight
-    : Math.min(screenHeight * 0.64, 560);
+  // The create form used to sit in a fixed-height sheet with KeyboardAvoidingView
+  // only around that ScrollView. On a short phone the keyboard covered the
+  // fields, and the existing-person list was not avoiding the keyboard at all.
+  // Lift the whole sheet by the keyboard overlap instead.
+  const sheetFrame = getAddMemberSheetFrame({
+    windowHeight: keyboard.windowHeight,
+    restingWindowHeight: keyboard.restingWindowHeight,
+    topInset: insets.top,
+    keyboardHeight: keyboardHeightForAddMemberMode(mode, keyboard.frame.height),
+    keyboardScreenY: keyboard.frame.screenY,
+    fullScreen: isExistingPicker,
+  });
+  const bottomSheetHeight = sheetFrame.height;
+
+  const rememberIntroLayout = (event: LayoutChangeEvent) => {
+    const { y, height } = event.nativeEvent.layout;
+    setIntroLayout((prev) => {
+      if (prev && prev.y === y && prev.height === height) return prev;
+      return { y, height };
+    });
+  };
+
+  const rememberFieldLayout = (field: AddPersonField) =>
+    (event: LayoutChangeEvent) => {
+      const { y, height } = event.nativeEvent.layout;
+      setFieldLayouts((prev) => {
+        const current = prev[field];
+        if (current && current.y === y && current.height === height) return prev;
+        layoutEpoch.current += 1;
+        return { ...prev, [field]: { y, height } };
+      });
+    };
+
+  // While Email is focused, Name has to stay on screen and Phone must not
+  // remain as a cut label between Email and the pinned Add person button.
+  // The gap is frozen for a given focus + viewport so applying it (which
+  // shifts later rows) does not feed back into the next measurement.
+  useEffect(() => {
+    if (!sheetFrame.keyboardOpen || focusedField == null || scrollViewportHeight <= 0) {
+      revealKey.current = "";
+      waitForLayoutEpoch.current = null;
+      setFollowerGap((prev) => (prev == null ? prev : null));
+      return;
+    }
+    const name = fieldLayouts.name;
+    const email = fieldLayouts.email;
+    const phone = fieldLayouts.phone;
+    if (
+      !name || !email || !phone ||
+      name.height <= 0 || email.height <= 0 || phone.height <= 0
+    ) {
+      return;
+    }
+    const key = [
+      focusedField,
+      Math.round(scrollViewportHeight),
+      Math.round(name.y),
+      Math.round(name.height),
+      Math.round(email.height),
+      Math.round(phone.height),
+      focusedField === "phone" && introLayout
+        ? `${Math.round(introLayout.y)}:${Math.round(introLayout.height)}`
+        : "",
+    ].join(":");
+    if (revealKey.current === key) {
+      scrollRef.current?.scrollTo({ y: lockedScrollOffset.current, animated: false });
+      return;
+    }
+
+    if (followerGap != null) {
+      waitForLayoutEpoch.current = layoutEpoch.current;
+      revealKey.current = "";
+      setFollowerGap(null);
+      return;
+    }
+    if (
+      waitForLayoutEpoch.current != null &&
+      layoutEpoch.current <= waitForLayoutEpoch.current
+    ) {
+      return;
+    }
+    waitForLayoutEpoch.current = null;
+
+    const reveal = revealAddMemberField({
+      fields: [name, email, phone],
+      focusedIndex: ADD_PERSON_FIELDS.indexOf(focusedField),
+      alsoVisible: focusedField === "email" ? [0] : [],
+      hidePartialAbove: focusedField === "phone" ? introLayout : null,
+      viewportHeight: scrollViewportHeight,
+      currentOffset: scrollOffset.current,
+    });
+    revealKey.current = key;
+    lockedScrollOffset.current = reveal.offset;
+    scrollOffset.current = reveal.offset;
+    scrollRef.current?.scrollTo({ y: reveal.offset, animated: false });
+    if (reveal.gap > 0 && reveal.gapBeforeIndex != null) {
+      const before = ADD_PERSON_FIELDS[reveal.gapBeforeIndex];
+      if (before) {
+        setFollowerGap({ before, height: reveal.gap });
+        return;
+      }
+    }
+    setFollowerGap(null);
+  }, [
+    sheetFrame.keyboardOpen,
+    focusedField,
+    fieldLayouts,
+    scrollViewportHeight,
+    followerGap,
+    introLayout,
+  ]);
+
+  const followerSpacer = (before: AddPersonField) => (
+    followerGap?.before === before && followerGap.height > 0
+      ? <View style={{ height: followerGap.height }} />
+      : null
+  );
+
+  const renderAddButton = () => (
+    <Button
+      mode="contained"
+      onPress={handleAdd}
+      disabled={loading}
+      loading={loading}
+      style={styles.addButton}
+      testID="add-member-submit-button"
+    >
+      Add person
+    </Button>
+  );
   const translateY = slideAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [bottomSheetHeight, 0],
@@ -369,7 +541,8 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
             {
               height: bottomSheetHeight,
               transform: [{ translateY }],
-              paddingBottom: insets.bottom,
+              paddingBottom: sheetFrame.keyboardOpen ? 0 : insets.bottom,
+              marginBottom: sheetFrame.marginBottom,
               paddingTop: isExistingPicker ? insets.top : 0,
               backgroundColor: theme.colors.surface,
             },
@@ -379,7 +552,7 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
             ? (
               <View style={styles.pickerContent}>
                 <Appbar.Header style={styles.header}>
-                  <Appbar.BackAction onPress={() => setMode("chooser")} />
+                  <Appbar.BackAction onPress={showChooser} />
                   <Appbar.Content
                     title="Choose existing person"
                     titleStyle={styles.title}
@@ -407,6 +580,7 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
                   </Text>
                 </View>
                 <ScrollView
+                  style={styles.pickerList}
                   contentContainerStyle={styles.peopleList}
                   keyboardShouldPersistTaps="handled"
                 >
@@ -505,7 +679,7 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
                 </View>
                 <Appbar.Header style={styles.header}>
                   {mode === "create" && (
-                    <Appbar.BackAction onPress={() => setMode("chooser")} />
+                    <Appbar.BackAction onPress={showChooser} />
                   )}
                   <Appbar.Content
                     title="Add people"
@@ -568,53 +742,80 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
                     </View>
                   )
                   : (
-                    <KeyboardAvoidingView
-                      behavior={Platform.OS === "ios" ? "padding" : "height"}
-                      style={styles.keyboardView}
-                    >
+                    <View style={styles.formColumn}>
                       <ScrollView
-                        contentContainerStyle={styles.formContent}
+                        ref={scrollRef}
+                        style={styles.formScroll}
+                        contentContainerStyle={[
+                          styles.formContent,
+                          sheetFrame.keyboardOpen && styles.formContentWithFooter,
+                        ]}
                         keyboardShouldPersistTaps="handled"
+                        onScroll={(event) => {
+                          scrollOffset.current = event.nativeEvent.contentOffset.y;
+                        }}
+                        scrollEventThrottle={16}
+                        onLayout={(event) => {
+                          const next = event.nativeEvent.layout.height;
+                          setScrollViewportHeight((prev) =>
+                            prev === next ? prev : next
+                          );
+                        }}
                       >
-                        <Text
-                          style={[styles.subtitle, {
-                            color: theme.colors.onSurfaceVariant,
-                          }]}
+                        <View collapsable={false} onLayout={rememberIntroLayout}>
+                          <Text
+                            style={[styles.subtitle, {
+                              color: theme.colors.onSurfaceVariant,
+                            }]}
+                          >
+                            Add them now and include them in expenses. Email is
+                            optional.
+                          </Text>
+                        </View>
+                        <View
+                          collapsable={false}
+                          onLayout={rememberFieldLayout("name")}
                         >
-                          Add them now and include them in expenses. Email is
-                          optional.
-                        </Text>
-                        <TextInput
-                          label="Name"
-                          value={fullName}
-                          onChangeText={setFullName}
-                          mode="outlined"
-                          autoCapitalize="words"
-                          disabled={loading}
-                          style={styles.input}
-                          left={<TextInput.Icon icon="account" />}
-                          placeholder="Ayaan"
-                          testID="person-name-input"
-                        />
-                        <TextInput
-                          label="Email (optional)"
-                          value={email}
-                          onChangeText={(value) => {
-                            setEmail(value);
-                            if (emailError) setEmailError(null);
-                          }}
-                          mode="outlined"
-                          keyboardType="email-address"
-                          autoCapitalize="none"
-                          autoComplete="email"
-                          disabled={loading}
-                          error={!!emailError}
-                          style={styles.input}
-                          left={<TextInput.Icon icon="email" />}
-                          placeholder="ayaan@example.com"
-                          testID="person-email-input"
-                          accessibilityHint={emailError || undefined}
-                        />
+                          <TextInput
+                            label="Name"
+                            value={fullName}
+                            onChangeText={setFullName}
+                            onFocus={() => setFocusedField("name")}
+                            mode="outlined"
+                            autoCapitalize="words"
+                            disabled={loading}
+                            style={styles.input}
+                            left={<TextInput.Icon icon="account" />}
+                            placeholder="Ayaan"
+                            testID="person-name-input"
+                          />
+                        </View>
+                        {followerSpacer("email")}
+                        <View
+                          collapsable={false}
+                          onLayout={rememberFieldLayout("email")}
+                        >
+                          <TextInput
+                            label="Email (optional)"
+                            value={email}
+                            onChangeText={(value) => {
+                              setEmail(value);
+                              if (emailError) setEmailError(null);
+                            }}
+                            onFocus={() => setFocusedField("email")}
+                            mode="outlined"
+                            keyboardType="email-address"
+                            autoCapitalize="none"
+                            autoComplete="email"
+                            disabled={loading}
+                            error={!!emailError}
+                            style={styles.input}
+                            left={<TextInput.Icon icon="email" />}
+                            placeholder="ayaan@example.com"
+                            testID="person-email-input"
+                            accessibilityHint={emailError || undefined}
+                          />
+                        </View>
                         {emailError
                           ? (
                             <Text
@@ -632,7 +833,12 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
                             </Text>
                           )
                           : null}
-                        <View style={styles.phoneInputWrapper}>
+                        {followerSpacer("phone")}
+                        <View
+                          collapsable={false}
+                          style={styles.phoneInputWrapper}
+                          onLayout={rememberFieldLayout("phone")}
+                        >
                           <Pressable
                             onPress={() => setShowCountryPicker(true)}
                             disabled={loading}
@@ -664,6 +870,7 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
                               setPhoneNumber(value);
                               if (phoneError) setPhoneError(null);
                             }}
+                            onFocus={() => setFocusedField("phone")}
                             mode="outlined"
                             keyboardType="phone-pad"
                             autoComplete="tel"
@@ -692,16 +899,7 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
                             </Text>
                           )
                           : null}
-                        <Button
-                          mode="contained"
-                          onPress={handleAdd}
-                          disabled={loading}
-                          loading={loading}
-                          style={styles.addButton}
-                          testID="add-member-submit-button"
-                        >
-                          Add person
-                        </Button>
+                        {sheetFrame.keyboardOpen ? null : renderAddButton()}
                         <CountryCodePicker
                           visible={showCountryPicker}
                           onDismiss={() => setShowCountryPicker(false)}
@@ -709,7 +907,18 @@ export const AddMemberScreen: React.FC<AddMemberScreenProps> = ({
                           selectedCountry={selectedCountry}
                         />
                       </ScrollView>
-                    </KeyboardAvoidingView>
+                      {sheetFrame.keyboardOpen
+                        ? (
+                          <View
+                            style={[styles.keyboardFooter, {
+                              backgroundColor: theme.colors.surface,
+                            }]}
+                          >
+                            {renderAddButton()}
+                          </View>
+                        )
+                        : null}
+                    </View>
                   )}
               </>
             )}
@@ -819,7 +1028,14 @@ const styles = StyleSheet.create({
   },
   dividerLine: { flex: 1 },
   linkHint: { textAlign: "center", marginTop: 10, fontSize: 12 },
-  keyboardView: { flex: 1 },
+  formColumn: { flex: 1, minHeight: 0 },
+  formScroll: { flexGrow: 0, flexShrink: 1, minHeight: 0 },
+  formContentWithFooter: { paddingBottom: 12 },
+  keyboardFooter: {
+    paddingHorizontal: 20,
+    paddingTop: 4,
+    paddingBottom: 12,
+  },
   input: { marginBottom: 16 },
   phoneInputWrapper: {
     flexDirection: "row",
@@ -846,7 +1062,8 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   addButton: { marginTop: 8 },
-  pickerContent: { flex: 1 },
+  pickerContent: { flex: 1, minHeight: 0 },
+  pickerList: { flex: 1, minHeight: 0 },
   pickerBody: { paddingHorizontal: 20 },
   sectionLabel: { marginTop: 24, marginBottom: 8 },
   peopleList: { paddingBottom: 32 },
