@@ -1,28 +1,30 @@
 import React, { useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
-import { Appbar, FAB, SegmentedButtons, Text, useTheme } from "react-native-paper";
+import { Appbar, FAB, Text, useTheme } from "react-native-paper";
 import { BottomNavBar } from "../components/BottomNavBar";
 import { GroupBalanceBadge } from "../components/GroupBalanceBadge";
 import { GroupDashboard } from "../components/GroupDashboard";
 import { LedgerDateLabel, LedgerRow } from "../components/TransactionsSection";
 import { TransactionSearchField } from "../components/TransactionSearchField";
 import type { Participant, Settlement, Transaction } from "../types";
+import {
+  phase1ShotKeepsLedger,
+  phase1ShotShowsAddExpense,
+  readGroupsPhase1Shot,
+  type GroupsPhase1Shot,
+} from "../utils/groupsPhase1Shots";
 import { groupByLedgerDateSection } from "../utils/ledgerDateSections";
+import { OPTIMISTIC_TRANSACTION_ID_MIN } from "../utils/transactionOptimisticCache";
 import { buildTransactionsLedger, type LedgerItem } from "../utils/transactionsLedger";
 import {
+  LOADED_ROWS_SEARCH_NOTE,
   SEARCHING_TRANSACTIONS_LINE,
   transactionSearchEmptyMessage,
   type TransactionSearchFilter,
 } from "../utils/transactionSearch";
 
-export type GroupsPhase1Shot =
-  | "ready"
-  | "search"
-  | "empty"
-  | "payment"
-  | "balances"
-  | "offline"
-  | "fab";
+export type { GroupsPhase1Shot };
+export { readGroupsPhase1Shot };
 
 const VIEWER = "me";
 
@@ -39,6 +41,7 @@ function expense(
   amount: number,
   payer: string,
   splits: Transaction["splits"],
+  currency = "INR",
 ): Transaction {
   return {
     id,
@@ -46,7 +49,7 @@ function expense(
     date,
     amount,
     type: "expense",
-    currency: "INR",
+    currency,
     paid_by: payer === "p-me" ? VIEWER : payer,
     paid_by_participant_id: payer,
     splits,
@@ -68,6 +71,20 @@ const taxi = expense(3, "Taxi to airport", "2026-11-11", 900, "p-meera", [
   { participant_id: "p-rahul", user_id: "rahul", amount: 450 },
 ]);
 
+const groceries = expense(
+  OPTIMISTIC_TRANSACTION_ID_MIN,
+  "Groceries",
+  "2026-11-12",
+  600,
+  "p-me",
+  [{ participant_id: "p-me", user_id: VIEWER, amount: 0 }],
+);
+const beach = expense(50, "Beach shack", "2026-11-12", 1200, "p-me", [
+  { participant_id: "p-me", user_id: VIEWER, amount: 400 },
+  { participant_id: "p-rahul", user_id: "rahul", amount: 400 },
+  { participant_id: "p-meera", user_id: "meera", amount: 400 },
+], "THB");
+
 const payment: Settlement = {
   id: "pay-1",
   group_id: "g",
@@ -81,31 +98,53 @@ const payment: Settlement = {
   created_at: "2026-11-11T18:00:00",
 };
 
-function ledgerFor(shot: GroupsPhase1Shot): LedgerItem[] {
-  if (shot === "empty" || shot === "balances" || shot === "offline") return [];
-  const expenses = shot === "search"
-    ? [taxi]
-    : shot === "payment"
-      ? [dinner, scooter]
-      : [dinner, scooter, taxi];
-  const payments = shot === "search" ? [] : [payment];
-  return buildTransactionsLedger(expenses, payments, "all");
+function expensesFor(shot: GroupsPhase1Shot): Transaction[] {
+  switch (shot) {
+    case "empty":
+    case "offline":
+      return [];
+    case "search":
+      return [taxi];
+    case "payment":
+      return [dinner, scooter];
+    case "saving":
+      return [groceries, dinner, scooter];
+    case "mixed":
+      return [beach, dinner, scooter];
+    case "ready":
+    case "fab":
+    case "balances":
+      return [dinner, scooter, taxi];
+    default: {
+      const _exhaustive: never = shot;
+      return _exhaustive;
+    }
+  }
 }
 
-export function readGroupsPhase1Shot(url: string | null | undefined): GroupsPhase1Shot {
-  const match = /[?&#]shot=([a-z0-9-]+)/i.exec(url || "");
-  const value = match?.[1]?.toLowerCase();
-  if (
-    value === "search"
-    || value === "empty"
-    || value === "payment"
-    || value === "balances"
-    || value === "offline"
-    || value === "fab"
-  ) {
-    return value;
+function paymentsFor(shot: GroupsPhase1Shot): Settlement[] {
+  switch (shot) {
+    case "empty":
+    case "offline":
+    case "search":
+    case "saving":
+    case "mixed":
+      return [];
+    case "ready":
+    case "fab":
+    case "payment":
+    case "balances":
+      return [payment];
+    default: {
+      const _exhaustive: never = shot;
+      return _exhaustive;
+    }
   }
-  return "ready";
+}
+
+function ledgerFor(shot: GroupsPhase1Shot): LedgerItem[] {
+  if (!phase1ShotKeepsLedger(shot)) return [];
+  return buildTransactionsLedger(expensesFor(shot), paymentsFor(shot), "all");
 }
 
 /**
@@ -119,7 +158,7 @@ export function GroupsPhase1PreviewScreen({ shot }: { shot: GroupsPhase1Shot }) 
   const [filter, setFilter] = useState<TransactionSearchFilter>("all");
   const [open, setOpen] = useState(searching);
   const items = ledgerFor(shot);
-  const showFab = shot === "ready" || shot === "fab" || shot === "payment";
+  const showFab = phase1ShotShowsAddExpense(shot);
   const showBalancesError = shot === "balances";
 
   if (shot === "offline") {
@@ -175,7 +214,6 @@ export function GroupsPhase1PreviewScreen({ shot }: { shot: GroupsPhase1Shot }) 
         <Appbar.Action icon="dots-vertical" accessibilityLabel="Group options" />
       </Appbar.Header>
       {searching ? null : (
-        <>
         <GroupDashboard
           groupName="Goa trip"
           balances={[]}
@@ -188,17 +226,6 @@ export function GroupsPhase1PreviewScreen({ shot }: { shot: GroupsPhase1Shot }) 
           participants={participants}
           defaultCurrency="INR"
         />
-        <View style={{ paddingHorizontal: 16, marginTop: 4 }}>
-          <SegmentedButtons
-            value="transactions"
-            onValueChange={() => {}}
-            buttons={[
-              { value: "transactions", label: "Transactions", icon: "format-list-bulleted" },
-              { value: "activity", label: "Activity", icon: "history" },
-            ]}
-          />
-        </View>
-        </>
       )}
       <TransactionSearchField
         query={query}
@@ -212,6 +239,7 @@ export function GroupsPhase1PreviewScreen({ shot }: { shot: GroupsPhase1Shot }) 
           setFilter("all");
           setOpen(false);
         }}
+        scopeNote={shot === "search" ? LOADED_ROWS_SEARCH_NOTE : null}
         autoFocus={shot === "search"}
       />
       {shot === "empty" ? (

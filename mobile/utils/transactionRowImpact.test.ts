@@ -72,6 +72,23 @@ Deno.test("a viewer who did not pay and is not in the split sees not in split", 
   assertEquals(row.net, null);
 });
 
+Deno.test("a foreign-currency expense keeps that currency on the payer line", () => {
+  const row = buildExpenseRowModel({
+    amount: 1200,
+    currency: "THB",
+    payerName: "You",
+    paidByParticipantId: "p-me",
+    splits: [
+      { participant_id: "p-me", amount: 400 },
+      { participant_id: "p-rahul", amount: 800 },
+    ],
+    viewer,
+  });
+  assertEquals(row.payerLine, "You paid ฿1,200");
+  assertEquals(row.impactText, "You're owed ฿800");
+  assertEquals(row.impactMuted, false);
+});
+
 Deno.test("saving rows replace the payer line and still keep the impact", () => {
   const row = buildExpenseRowModel({
     amount: 600,

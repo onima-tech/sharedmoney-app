@@ -124,6 +124,21 @@ Deno.test("group details shows the list loader instead of empty copy when balanc
   assertEquals(treatment.showListEmptyState, false);
 });
 
+Deno.test("a balances error leaves a loaded ledger in place", () => {
+  const treatment = resolveGroupDetailsLoadingTreatment({
+    balancesLoading: false,
+    balancesError: true,
+    listDataLoading: false,
+    listContentEmpty: false,
+    listRefreshing: false,
+    fetchingNextPage: false,
+  });
+
+  assertEquals(treatment.showDashboardSkeleton, false);
+  assertEquals(treatment.showListInitialLoader, false);
+  assertEquals(treatment.showListEmptyState, false);
+});
+
 Deno.test("loaded rows can refresh and paginate while dashboard skeleton is visible", () => {
   const treatment = resolveGroupDetailsLoadingTreatment({
     balancesLoading: true,

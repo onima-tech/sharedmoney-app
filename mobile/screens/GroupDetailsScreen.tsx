@@ -24,7 +24,6 @@ import {
   FAB,
   Menu,
   Portal,
-  SegmentedButtons,
   Text,
   TextInput,
   useTheme
@@ -49,6 +48,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useProfile } from "../hooks/useProfile";
 import { SCREEN_TRANSITION_MS } from "../constants/layout";
 import { useActivity } from "../hooks/useActivity";
+import { useKeyboardOverlap } from "../hooks/useKeyboardOverlap";
 import { useBalances } from "../hooks/useBalances";
 import {
   useCancelInvitation,
@@ -238,6 +238,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   const [listMode, setListMode] = useState<"transactions" | "activity">(
     initialListMode
   );
+  const [historyFromMenu, setHistoryFromMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFilter, setSearchFilter] = useState<TransactionSearchFilter>("all");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -541,17 +542,28 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     }
   }, [groupError, signOut]);
 
+  // History opened from the overflow returns to the ledger. A notification
+  // that opened History still leaves the group.
+  const handleChromeBack = useCallback(() => {
+    if (showMembers) {
+      setShowMembers(false);
+      return;
+    }
+    if (listMode === "activity" && historyFromMenu) {
+      setHistoryFromMenu(false);
+      setListMode("transactions");
+      return;
+    }
+    onBack();
+  }, [historyFromMenu, listMode, onBack, showMembers]);
+
   // Handle Android hardware back button. Skip while another screen is covering
   // this one so the overlay (e.g. transaction form) owns the back press.
   useEffect(() => {
     if (!captureHardwareBack) return;
 
     const handleHardwareBack = () => {
-      if (showMembers) {
-        setShowMembers(false);
-        return true;
-      }
-      onBack();
+      handleChromeBack();
       return true;
     };
 
@@ -560,7 +572,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
       handleHardwareBack
     );
     return () => subscription.remove();
-  }, [captureHardwareBack, onBack, showMembers]);
+  }, [captureHardwareBack, handleChromeBack]);
 
   // Refetch all data function
   const refetchAll = () => {
@@ -626,6 +638,10 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   const viewerUserId = session?.user?.id ?? null;
   const viewerParticipantId = participants.find((person) => person.user_id === viewerUserId)?.id ?? null;
   const searchEngaged = searchOpen || searchQuery.trim().length > 0 || searchFilter !== "all";
+  const keyboard = useKeyboardOverlap(listMode === "transactions" && searchEngaged);
+  const searchKeyboardInset = listMode === "transactions" && searchEngaged
+    ? keyboard.frame.height
+    : 0;
 
   const cancelSearch = useCallback(() => {
     setSearchQuery("");
@@ -773,6 +789,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   useEffect(() => {
     if (highlightedTransactionId === null) return;
     setListMode("transactions");
+    setHistoryFromMenu(false);
     highlightTimerRef.current?.cancel();
     highlightTimerRef.current = createTransactionHighlightTimer(() => {
       setVisibleHighlightedTransactionId((currentTransactionId) =>
@@ -1787,18 +1804,12 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     >
       <Appbar.Header style={{ backgroundColor: theme.colors.background }}>
         <Appbar.BackAction
-          onPress={() => {
-            if (showMembers) {
-              setShowMembers(false);
-            } else {
-              onBack();
-            }
-          }}
+          onPress={handleChromeBack}
           accessibilityLabel="Navigate back"
           testID="back-button"
         />
         <Appbar.Content
-          title={showMembers ? "People" : group.name}
+          title={showMembers ? "People" : listMode === "activity" ? "History" : group.name}
           titleStyle={{ fontWeight: "bold" }}
         />
         {/* Group options — back, name, one overflow. */}
@@ -1820,6 +1831,32 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
             }
             contentStyle={{ minWidth: 200 }}
           >
+            {listMode === "activity" ? (
+              <Menu.Item
+                onPress={() => {
+                  handleCloseMenu();
+                  setHistoryFromMenu(false);
+                  setListMode("transactions");
+                }}
+                title="Transactions"
+                leadingIcon="format-list-bulleted"
+                testID="group-menu-transactions"
+              />
+            ) : (
+              <Menu.Item
+                onPress={() => {
+                  handleCloseMenu();
+                  setSearchQuery("");
+                  setSearchFilter("all");
+                  setSearchOpen(false);
+                  setHistoryFromMenu(true);
+                  setListMode("activity");
+                }}
+                title="History"
+                leadingIcon="history"
+                testID="group-menu-history"
+              />
+            )}
             {isActiveMember && (
               <>
                 <Menu.Item
@@ -2009,6 +2046,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
           contentContainerStyle={[
             styles.scrollContent,
             showGroupFab ? { paddingBottom: LEDGER_FAB_INSET } : null,
+            searchKeyboardInset > 0 ? { paddingBottom: searchKeyboardInset + 16 } : null,
           ]}
           data={listRows}
           keyExtractor={(row) => row.key}
@@ -2066,35 +2104,6 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
               />
               )}
 
-              {searchEngaged ? null : (
-              <View style={{ paddingHorizontal: 16, marginBottom: 0, marginTop: 4 }}>
-                <SegmentedButtons
-                  value={listMode}
-                  onValueChange={(val: string) =>
-                    setListMode(val as "transactions" | "activity")
-                  }
-                  theme={{
-                    colors: {
-                      secondaryContainer: theme.colors.primaryContainer,
-                      onSecondaryContainer: theme.colors.onPrimaryContainer,
-                    },
-                  }}
-                  buttons={[
-                    {
-                      value: "transactions",
-                      label: "Transactions",
-                      icon: "format-list-bulleted",
-                    },
-                    {
-                      value: "activity",
-                      label: "Activity",
-                      icon: "history",
-                    },
-                  ]}
-                />
-              </View>
-              )}
-
               {listMode === "transactions" ? (
                 <TransactionSearchField
                   query={searchQuery}
@@ -2115,7 +2124,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
                       alignItems: "center",
                       marginBottom: 0,
                       paddingHorizontal: 4,
-                      marginTop: -8,
+                      marginTop: 8,
                     }}
                   >
                     <Button
