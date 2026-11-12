@@ -9,7 +9,7 @@ import {
 } from '../hooks/useCurrencyPreferences';
 import { Balance } from '../types';
 import { balanceAmountColor, GROUP_LIST_EVEN_LABEL, groupListBalanceWords } from '../utils/balanceRowLabels';
-import { formatCurrency } from '../utils/currency';
+import { formatShareCurrency } from "../utils/settleShareMessage";
 import { formatUnifiedHeadline, unifyBalances } from '../utils/currencyMerge';
 import { createPreviewRateBook } from '../utils/previewRates';
 
@@ -144,7 +144,7 @@ export const GroupBalanceBadge: React.FC<GroupBalanceBadgeProps> = ({
   const mainBalance = netBalances[0];
   const isMultiCurrency = netBalances.length > 1;
   const textColor = balanceAmountColor(mainBalance.amount, theme.colors, { dark: theme.dark });
-  const absolute = formatCurrency(Math.abs(mainBalance.amount), mainBalance.currency);
+  const absolute = formatShareCurrency(Math.abs(mainBalance.amount), mainBalance.currency);
   const label = groupListBalanceWords(mainBalance.amount, absolute)
     + (isMultiCurrency ? ' (+)' : '');
 

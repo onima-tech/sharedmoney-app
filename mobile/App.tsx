@@ -90,6 +90,10 @@ import { GroupDetailsScreen } from "./screens/GroupDetailsScreen";
 import { GroupStatsMode, GroupStatsScreen } from "./screens/GroupStatsScreen";
 import { GroupsHomeSkeleton, GroupsListScreen } from "./screens/GroupsListScreen";
 import { SplitBillScreen } from "./screens/SplitBillScreen";
+import {
+  GroupsPhase1PreviewScreen,
+  readGroupsPhase1Shot,
+} from "./screens/GroupsPhase1PreviewScreen";
 import { extractBillSplitToken } from "./utils/billSplit";
 import { NotificationDetailScreen } from "./screens/NotificationDetailScreen";
 import { NotificationsScreen } from "./screens/NotificationsScreen";
@@ -246,6 +250,7 @@ const DEV_CRASH_PREVIEW_ID = "SM-7K3Q-92";
 
 /** Module-level so remounts during auth bootstrap don't drop the QA deep link. */
 let pendingDevBillPreview: "dead" | "offline" | null = null;
+let pendingDevGroupsPhase1 = false;
 let pendingDevCrashPreview: "first" | "repeat" | "copied" | null = null;
 let pendingDevForceCrash = false;
 
@@ -276,6 +281,10 @@ function applyDevPreview(kind: DevPreviewKind): boolean {
     pendingDevBillPreview = "offline";
     return true;
   }
+  if (kind === "groups-phase1") {
+    pendingDevGroupsPhase1 = true;
+    return true;
+  }
   return false;
 }
 
@@ -289,6 +298,7 @@ function AppContent() {
   const [devBillPreview, setDevBillPreview] = useState<"dead" | "offline" | null>(
     pendingDevBillPreview,
   );
+  const [devGroupsPhase1, setDevGroupsPhase1] = useState(pendingDevGroupsPhase1);
   const [devCrashPreview, setDevCrashPreview] = useState<
     null | "first" | "repeat" | "copied"
   >(pendingDevCrashPreview);
@@ -764,6 +774,7 @@ function AppContent() {
         if (devPreview === "crash-copied") setDevCrashPreview("copied");
         if (devPreview === "bill-dead") setDevBillPreview("dead");
         if (devPreview === "bill-offline") setDevBillPreview("offline");
+        if (devPreview === "groups-phase1") setDevGroupsPhase1(true);
         return;
       }
       const billToken = extractBillSplitToken(url);
@@ -1387,6 +1398,16 @@ function AppContent() {
     );
   }
 
+  if (__DEV__ && previewParam === "groups-phase1") {
+    return (
+      <GroupsPhase1PreviewScreen
+        shot={readGroupsPhase1Shot(
+          Platform.OS === "web" && typeof window !== "undefined" ? window.location.href : null,
+        )}
+      />
+    );
+  }
+
   // Render-time throw so the root ErrorBoundary paints CrashErrorFallback.
   // Stripped from production builds via the __DEV__ gate (never ships).
   if (__DEV__ && devForceCrash) {
@@ -1420,6 +1441,15 @@ function AppContent() {
     setSelectedGroup(null);
     clearJoinPathFromWebUrl();
   };
+
+  if (__DEV__ && devGroupsPhase1) {
+    const shot = readGroupsPhase1Shot(
+      Platform.OS === "web" && typeof window !== "undefined" ? window.location.href : null,
+    );
+    return (
+      <GroupsPhase1PreviewScreen key={`groups-phase1-${shot}`} shot={shot} />
+    );
+  }
 
   // __DEV__ bill-link empty states for simulator screenshots (no network needed).
   if (__DEV__ && devBillPreview) {

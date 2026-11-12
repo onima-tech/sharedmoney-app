@@ -11,6 +11,7 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  useWindowDimensions,
   View,
 } from "react-native";
 import {
@@ -23,7 +24,6 @@ import {
   FAB,
   Menu,
   Portal,
-  SegmentedButtons,
   Text,
   TextInput,
   useTheme
@@ -39,6 +39,7 @@ import { InvitationsList } from "../components/InvitationsList";
 import { MembersList } from "../components/MembersList";
 import { SafetyAction, SafetyActionModal } from "../components/SafetyActionModal";
 import {
+  LedgerDateLabel,
   LedgerRow,
   LedgerSkeleton,
   TransactionsEmptyState,
@@ -47,6 +48,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useProfile } from "../hooks/useProfile";
 import { SCREEN_TRANSITION_MS } from "../constants/layout";
 import { useActivity } from "../hooks/useActivity";
+import { useKeyboardOverlap } from "../hooks/useKeyboardOverlap";
 import { useBalances } from "../hooks/useBalances";
 import {
   useCancelInvitation,
@@ -115,9 +117,28 @@ import {
 } from "../utils/transactionHighlight";
 import {
   buildTransactionsLedger,
-  type LedgerFilter,
   type LedgerItem,
 } from "../utils/transactionsLedger";
+import { TransactionSearchField } from "../components/TransactionSearchField";
+import { groupByLedgerDateSection } from "../utils/ledgerDateSections";
+import { resolveLedgerParticipantName } from "../utils/ledgerNames";
+import {
+  buildExpenseRowModel,
+  paymentAmountText,
+  paymentInvolvesViewer,
+  paymentRowTitle,
+} from "../utils/transactionRowImpact";
+import { isOptimisticTransactionId } from "../utils/transactionOptimisticCache";
+import {
+  involvingMeFilterLabel,
+  ledgerRowMatchesSearch,
+  LOADED_ROWS_SEARCH_NOTE,
+  SEARCHING_TRANSACTIONS_LINE,
+  transactionSearchEmptyMessage,
+  transactionSearchTerm,
+  type LedgerSearchFields,
+  type TransactionSearchFilter,
+} from "../utils/transactionSearch";
 import { buildActivityFeedEntries, type ActivityFeedEntry } from "../utils/activityFeedRows";
 import {
   countActiveMembers,
@@ -148,8 +169,12 @@ import { GroupStatsMode } from "./GroupStatsScreen";
 import { SettlementFormScreen } from "./SettlementFormScreen";
 
 type GroupDetailsListRow =
+  | { kind: "section"; key: string; label: string }
   | { kind: "ledger"; key: string; item: LedgerItem }
   | { kind: "activity"; key: string; entry: ActivityFeedEntry };
+
+/** Room under the last row so the Add expense pill never covers it. */
+const LEDGER_FAB_INSET = 112;
 
 interface GroupDetailsScreenProps {
   group: GroupWithMembers;
@@ -213,7 +238,10 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   const [listMode, setListMode] = useState<"transactions" | "activity">(
     initialListMode
   );
-  const [transactionsFilter, setTransactionsFilter] = useState<LedgerFilter>("all");
+  const [historyFromMenu, setHistoryFromMenu] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchFilter, setSearchFilter] = useState<TransactionSearchFilter>("all");
+  const [searchOpen, setSearchOpen] = useState(false);
   const [showActivityFilters, setShowActivityFilters] = useState(false);
   const [activityFilterType, setActivityFilterType] = useState<"all" | "expenses" | "settlements">("all");
   const [activityFilterParticipantId, setActivityFilterParticipantId] = useState<string>("all");
@@ -335,6 +363,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     email: session?.user?.email,
   });
   const theme = useTheme();
+  const { width: windowWidth, fontScale } = useWindowDimensions();
   const {
     preferredCurrency,
     groupSettings,
@@ -513,17 +542,28 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     }
   }, [groupError, signOut]);
 
+  // History opened from the overflow returns to the ledger. A notification
+  // that opened History still leaves the group.
+  const handleChromeBack = useCallback(() => {
+    if (showMembers) {
+      setShowMembers(false);
+      return;
+    }
+    if (listMode === "activity" && historyFromMenu) {
+      setHistoryFromMenu(false);
+      setListMode("transactions");
+      return;
+    }
+    onBack();
+  }, [historyFromMenu, listMode, onBack, showMembers]);
+
   // Handle Android hardware back button. Skip while another screen is covering
   // this one so the overlay (e.g. transaction form) owns the back press.
   useEffect(() => {
     if (!captureHardwareBack) return;
 
     const handleHardwareBack = () => {
-      if (showMembers) {
-        setShowMembers(false);
-        return true;
-      }
-      onBack();
+      handleChromeBack();
       return true;
     };
 
@@ -532,7 +572,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
       handleHardwareBack
     );
     return () => subscription.remove();
-  }, [captureHardwareBack, onBack, showMembers]);
+  }, [captureHardwareBack, handleChromeBack]);
 
   // Refetch all data function
   const refetchAll = () => {
@@ -595,13 +635,91 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   // API already filters by group_id, so no need for client-side filtering
   const transactions = txData;
   const settlements = settlementsData?.settlements ?? [];
+  const viewerUserId = session?.user?.id ?? null;
+  const viewerParticipantId = participants.find((person) => person.user_id === viewerUserId)?.id ?? null;
+  const searchEngaged = searchOpen || searchQuery.trim().length > 0 || searchFilter !== "all";
+  const keyboard = useKeyboardOverlap(listMode === "transactions" && searchEngaged);
+  const searchKeyboardInset = listMode === "transactions" && searchEngaged
+    ? keyboard.frame.height
+    : 0;
 
-  // Mixed ledger for the Transactions tab (expenses + payments). Spending cards
-  // still use backend group_stats and intentionally ignore payment amounts.
-  const ledgerItems = useMemo(
-    () => buildTransactionsLedger(transactions, settlements, transactionsFilter),
-    [transactions, settlements, transactionsFilter],
-  );
+  const cancelSearch = useCallback(() => {
+    setSearchQuery("");
+    setSearchFilter("all");
+    setSearchOpen(false);
+  }, []);
+
+  const ledgerSearchFields = useCallback((item: LedgerItem): LedgerSearchFields => {
+    if (item.kind === "payment") {
+      const settlement = item.settlement;
+      const fromName = resolveLedgerParticipantName({
+        participantId: settlement.from_participant_id,
+        userId: settlement.from_user_id,
+        currentUserId: viewerUserId,
+        participants,
+        members: group.members,
+      });
+      const toName = resolveLedgerParticipantName({
+        participantId: settlement.to_participant_id,
+        userId: settlement.to_user_id,
+        currentUserId: viewerUserId,
+        participants,
+        members: group.members,
+      });
+      return {
+        kind: "payment",
+        title: paymentRowTitle(fromName, toName),
+        payerLine: "",
+        amountText: paymentAmountText(settlement.amount, settlement.currency),
+        amount: settlement.amount,
+        involvesViewer: paymentInvolvesViewer({
+          fromParticipantId: settlement.from_participant_id,
+          fromUserId: settlement.from_user_id,
+          toParticipantId: settlement.to_participant_id,
+          toUserId: settlement.to_user_id,
+          viewer: { userId: viewerUserId, participantId: viewerParticipantId },
+        }),
+      };
+    }
+    const transaction = item.transaction;
+    const payerName = resolveLedgerParticipantName({
+      participantId: transaction.paid_by_participant_id,
+      userId: transaction.paid_by,
+      currentUserId: viewerUserId,
+      participants,
+      members: group.members,
+    });
+    const model = buildExpenseRowModel({
+      amount: transaction.amount,
+      currency: transaction.currency || getDefaultCurrency(),
+      payerName,
+      paidByParticipantId: transaction.paid_by_participant_id,
+      paidByUserId: transaction.paid_by,
+      splits: transaction.splits,
+      viewer: { userId: viewerUserId, participantId: viewerParticipantId },
+      saving: isOptimisticTransactionId(transaction.id),
+    });
+    return {
+      kind: "expense",
+      title: transaction.description || "Untitled",
+      payerLine: model.payerLine,
+      amountText: model.impactText || String(transaction.amount),
+      amount: transaction.amount,
+      involvesViewer: model.involvesViewer,
+    };
+  }, [group.members, participants, viewerParticipantId, viewerUserId]);
+
+  // Mixed ledger. Search runs over rows already loaded; older pages stay unloaded
+  // until the list asks for them, and the field says so.
+  const ledgerItems = useMemo(() => {
+    const merged = buildTransactionsLedger(transactions, settlements, "all");
+    if (!searchEngaged) return merged;
+    return merged.filter((item) => ledgerRowMatchesSearch(
+      ledgerSearchFields(item),
+      searchQuery,
+      searchFilter,
+    ));
+  }, [ledgerSearchFields, searchEngaged, searchFilter, searchQuery, settlements, transactions]);
 
   const activityEntries = useMemo(
     () => buildActivityFeedEntries(filteredActivities),
@@ -610,11 +728,20 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
 
   const listRows = useMemo<GroupDetailsListRow[]>(() => {
     if (listMode === "transactions") {
-      return ledgerItems.map((item) => ({
-        kind: "ledger" as const,
-        key: item.key,
-        item,
-      }));
+      const now = new Date();
+      const sections = groupByLedgerDateSection(
+        ledgerItems,
+        (item) => item.kind === "expense" ? item.transaction.date : item.settlement.created_at,
+        now,
+      );
+      const rows: GroupDetailsListRow[] = [];
+      sections.forEach((section, index) => {
+        rows.push({ kind: "section", key: `section-${index}-${section.label}`, label: section.label });
+        for (const item of section.items) {
+          rows.push({ kind: "ledger", key: item.key, item });
+        }
+      });
+      return rows;
     }
     return activityEntries.map((entry) => ({
       kind: "activity" as const,
@@ -662,6 +789,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   useEffect(() => {
     if (highlightedTransactionId === null) return;
     setListMode("transactions");
+    setHistoryFromMenu(false);
     highlightTimerRef.current?.cancel();
     highlightTimerRef.current = createTransactionHighlightTimer(() => {
       setVisibleHighlightedTransactionId((currentTransactionId) =>
@@ -839,7 +967,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   }, [finishScrollPerfSample]);
 
   const handleEndReached = React.useCallback(() => {
-    if (listMode === "transactions" && transactionsFilter !== "payments") {
+    if (listMode === "transactions" && searchFilter !== "payments") {
       handleLoadMoreTransactions();
       return;
     }
@@ -848,7 +976,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     }
   }, [
     listMode,
-    transactionsFilter,
+    searchFilter,
     handleLoadMoreTransactions,
     handleLoadMoreActivity,
   ]);
@@ -1486,7 +1614,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     isActiveMember,
     showMembers,
     transactionsEmptyStateVisible,
-  });
+  }) && !(listMode === "transactions" && searchEngaged);
 
   const handleOpenEditGroup = () => {
     setEditName(group.name);
@@ -1676,30 +1804,15 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     >
       <Appbar.Header style={{ backgroundColor: theme.colors.background }}>
         <Appbar.BackAction
-          onPress={() => {
-            if (showMembers) {
-              setShowMembers(false);
-            } else {
-              onBack();
-            }
-          }}
+          onPress={handleChromeBack}
           accessibilityLabel="Navigate back"
           testID="back-button"
         />
         <Appbar.Content
-          title={showMembers ? "People" : group.name}
+          title={showMembers ? "People" : listMode === "activity" ? "History" : group.name}
           titleStyle={{ fontWeight: "bold" }}
         />
-        {!showMembers && isActiveMember && !balancesError && (shareSummary || loadingTreatment.showDashboardSkeleton) ? (
-          <Appbar.Action
-            icon="share-variant"
-            accessibilityLabel="Share summary"
-            testID="share-settle-summary"
-            disabled={loadingTreatment.showDashboardSkeleton || !shareSummary}
-            onPress={handleShareSummary}
-          />
-        ) : null}
-        {/* Group options — active: Archive/Leave; archived: Unarchive/Leave/Remove; former: Remove */}
+        {/* Group options — back, name, one overflow. */}
         {showGroupMenu && (
           <Menu
             visible={menuVisible && !showMembers}
@@ -1718,8 +1831,44 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
             }
             contentStyle={{ minWidth: 200 }}
           >
+            {listMode === "activity" ? (
+              <Menu.Item
+                onPress={() => {
+                  handleCloseMenu();
+                  setHistoryFromMenu(false);
+                  setListMode("transactions");
+                }}
+                title="Transactions"
+                leadingIcon="format-list-bulleted"
+                testID="group-menu-transactions"
+              />
+            ) : (
+              <Menu.Item
+                onPress={() => {
+                  handleCloseMenu();
+                  setSearchQuery("");
+                  setSearchFilter("all");
+                  setSearchOpen(false);
+                  setHistoryFromMenu(true);
+                  setListMode("activity");
+                }}
+                title="History"
+                leadingIcon="history"
+                testID="group-menu-history"
+              />
+            )}
             {isActiveMember && (
               <>
+                <Menu.Item
+                  onPress={() => {
+                    handleCloseMenu();
+                    handleShareSummary();
+                  }}
+                  title="Share summary"
+                  leadingIcon="share-variant"
+                  disabled={!shareSummary || !!balancesError}
+                  testID="group-menu-share-summary"
+                />
                 <Menu.Item
                   onPress={() => {
                     handleCloseMenu();
@@ -1728,6 +1877,24 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
                   title="People"
                   leadingIcon="account-group"
                   testID="group-menu-people"
+                />
+                <Menu.Item
+                  onPress={() => {
+                    handleCloseMenu();
+                    handleStatNavigation("total-costs");
+                  }}
+                  title="Spending & stats"
+                  leadingIcon="chart-pie"
+                  testID="group-menu-spending"
+                />
+                <Menu.Item
+                  onPress={() => {
+                    handleCloseMenu();
+                    setShowCurrencySettings(true);
+                  }}
+                  title="Rates"
+                  leadingIcon="percent"
+                  testID="group-menu-rates"
                 />
                 {isOwner && (
                   <Menu.Item
@@ -1876,7 +2043,11 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
         <FlatList
           ref={mainListRef}
           style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
+          contentContainerStyle={[
+            styles.scrollContent,
+            showGroupFab ? { paddingBottom: LEDGER_FAB_INSET } : null,
+            searchKeyboardInset > 0 ? { paddingBottom: searchKeyboardInset + 16 } : null,
+          ]}
           data={listRows}
           keyExtractor={(row) => row.key}
           showsVerticalScrollIndicator={false}
@@ -1887,7 +2058,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
           onEndReachedThreshold={0.4}
           onScrollToIndexFailed={handleScrollToIndexFailed}
           ItemSeparatorComponent={
-            listMode === "transactions"
+            listMode === "activity"
               ? () => <View style={{ height: 8 }} />
               : undefined
           }
@@ -1901,6 +2072,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
           }
           ListHeaderComponent={
             <View>
+              {listMode === "transactions" && searchEngaged ? null : (
               <GroupDashboard
                 key={group.id}
                 groupId={group.id}
@@ -1925,104 +2097,24 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
                 balanceError={!!balancesError}
                 onSettlePress={isActiveMember && !balancesError ? handleSettleUp : undefined}
                 onShareSummaryChange={isActiveMember && !balancesError ? handleShareSummaryChange : undefined}
-                onMyCostsPress={() => handleStatNavigation("my-costs")}
-                onTotalCostsPress={() => handleStatNavigation("total-costs")}
+                onBalancesRetry={() => {
+                  void refetchBalances();
+                }}
                 onOpenCurrencySettings={() => setShowCurrencySettings(true)}
               />
-
-              <View
-                style={{
-                  paddingHorizontal: 16,
-                  marginTop: 8,
-                  marginBottom: 4,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                }}
-              >
-                <Text variant="titleMedium" style={{ fontWeight: "700", color: theme.colors.onSurface }}>
-                  Recent expenses
-                </Text>
-              </View>
-              <View style={{ paddingHorizontal: 16, marginBottom: 0 }}>
-                <SegmentedButtons
-                  value={listMode}
-                  onValueChange={(val: string) =>
-                    setListMode(val as "transactions" | "activity")
-                  }
-                  theme={{
-                    colors: {
-                      secondaryContainer: theme.colors.primaryContainer,
-                      onSecondaryContainer: theme.colors.onPrimaryContainer,
-                    },
-                  }}
-                  buttons={[
-                    {
-                      value: "transactions",
-                      label: "Transactions",
-                      icon: "format-list-bulleted",
-                    },
-                    {
-                      value: "activity",
-                      label: "Activity",
-                      icon: "history",
-                    },
-                  ]}
-                />
-              </View>
+              )}
 
               {listMode === "transactions" ? (
-                <View style={styles.transactionsFilterRow}>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    <Chip
-                      selected={transactionsFilter === "all"}
-                      onPress={() => setTransactionsFilter("all")}
-                      style={[
-                        styles.filterChip,
-                        transactionsFilter === "all" && {
-                          backgroundColor: theme.colors.primaryContainer,
-                        },
-                      ]}
-                      showSelectedCheck={true}
-                      mode={transactionsFilter === "all" ? "flat" : "outlined"}
-                      testID="transactions-filter-all"
-                    >
-                      All
-                    </Chip>
-                    <Chip
-                      selected={transactionsFilter === "expenses"}
-                      onPress={() => setTransactionsFilter("expenses")}
-                      style={[
-                        styles.filterChip,
-                        transactionsFilter === "expenses" && {
-                          backgroundColor: theme.colors.primaryContainer,
-                        },
-                      ]}
-                      showSelectedCheck={true}
-                      icon="format-list-bulleted"
-                      mode={transactionsFilter === "expenses" ? "flat" : "outlined"}
-                      testID="transactions-filter-expenses"
-                    >
-                      Expenses
-                    </Chip>
-                    <Chip
-                      selected={transactionsFilter === "payments"}
-                      onPress={() => setTransactionsFilter("payments")}
-                      style={[
-                        styles.filterChip,
-                        transactionsFilter === "payments" && {
-                          backgroundColor: theme.colors.primaryContainer,
-                        },
-                      ]}
-                      showSelectedCheck={true}
-                      icon="handshake-outline"
-                      mode={transactionsFilter === "payments" ? "flat" : "outlined"}
-                      testID="transactions-filter-payments"
-                    >
-                      Payments
-                    </Chip>
-                  </ScrollView>
-                </View>
+                <TransactionSearchField
+                  query={searchQuery}
+                  onChangeQuery={setSearchQuery}
+                  filter={searchFilter}
+                  onChangeFilter={setSearchFilter}
+                  open={searchEngaged}
+                  onOpen={() => setSearchOpen(true)}
+                  onCancel={cancelSearch}
+                  scopeNote={searchEngaged && txHasNextPage ? LOADED_ROWS_SEARCH_NOTE : null}
+                />
               ) : (
                 <View style={[styles.sectionContent, styles.activitySection]}>
                   <View
@@ -2032,7 +2124,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
                       alignItems: "center",
                       marginBottom: 0,
                       paddingHorizontal: 4,
-                      marginTop: -8,
+                      marginTop: 8,
                     }}
                   >
                     <Button
@@ -2176,9 +2268,12 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
             </View>
           }
           renderItem={({ item: row, index }) => {
+            if (row.kind === "section") {
+              return <LedgerDateLabel label={row.label} />;
+            }
             if (row.kind === "ledger") {
               return (
-                <View style={{ paddingTop: index === 0 ? 8 : 0 }}>
+                <View>
                   <LedgerRow
                     item={row.item}
                     members={group.members || []}
@@ -2224,12 +2319,40 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
           }}
           ListEmptyComponent={
             listMode === "transactions" ? (
-              groupOpenShellLoading ? (
+              (groupOpenShellLoading || (txLoading && transactions.length === 0))
+                && (searchQuery.trim().length > 0 || searchFilter !== "all") ? (
+                <Text
+                  variant="bodyMedium"
+                  testID="transaction-search-pending"
+                  style={{ color: theme.colors.onSurfaceVariant, paddingHorizontal: 16, paddingVertical: 20 }}
+                >
+                  {SEARCHING_TRANSACTIONS_LINE}
+                </Text>
+              ) : groupOpenShellLoading ? (
                 <LedgerSkeleton />
+              ) : searchEngaged && loadingTreatment.showListEmptyState ? (
+                <View style={{ paddingHorizontal: 16, paddingVertical: 20, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+                  <Text variant="bodyMedium" style={{ color: theme.colors.onSurface }} testID="transaction-search-empty">
+                    {transactionSearchEmptyMessage(transactionSearchTerm(
+                      searchQuery,
+                      searchFilter,
+                      involvingMeFilterLabel(windowWidth, fontScale),
+                    ))}
+                  </Text>
+                  <Button
+                    mode="text"
+                    compact
+                    onPress={cancelSearch}
+                    testID="transaction-search-clear"
+                    accessibilityLabel="Clear search"
+                  >
+                    Clear
+                  </Button>
+                </View>
               ) : loadingTreatment.showListEmptyState ? (
                 <View style={{ paddingHorizontal: 16 }}>
                   <TransactionsEmptyState
-                    filter={transactionsFilter}
+                    filter="all"
                     members={group.members || []}
                     canAct={isActiveMember}
                     onAddPeople={onAddMember}
@@ -2251,7 +2374,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
             ) : null
           }
           ListFooterComponent={
-            <View style={{ alignItems: "center", paddingTop: 8, paddingBottom: 80 }}>
+            <View style={{ alignItems: "center", paddingTop: 8, paddingBottom: showGroupFab ? 8 : 24 }}>
               {loadingTreatment.showFooterLoader ? (
                 <RNActivityIndicator size="small" />
               ) : null}
@@ -2516,10 +2639,9 @@ const styles = StyleSheet.create({
   },
   fab: {
     position: "absolute",
-    margin: 16,
-    right: 0,
-    bottom: 10,
-    borderRadius: 16,
+    right: 16,
+    bottom: 16,
+    borderRadius: 28,
   },
   transactionLeft: {
     flex: 1,
