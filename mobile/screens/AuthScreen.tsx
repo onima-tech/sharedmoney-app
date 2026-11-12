@@ -49,6 +49,16 @@ import {
   WhatsAppOtpApiError,
 } from "../utils/whatsappOtpApi";
 import {
+  mapAuthFailureReason,
+  type AuthFunnelMethod,
+  type AuthFunnelMode,
+} from "../utils/authFunnelEvents";
+import {
+  captureAuthFailed,
+  captureAuthMethodSelected,
+  captureAuthScreenViewed,
+} from "../utils/posthogAnalytics";
+import {
   getBrowserUnavailableAlertActions,
   readSocialAuthKind,
   type BrowserUnavailableAlertAction,
@@ -207,6 +217,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     previewWhatsAppLoading,
   );
   const [appleSignInAvailable, setAppleSignInAvailable] = useState(false);
+  const [appleAvailabilityResolved, setAppleAvailabilityResolved] = useState(
+    () => Platform.OS !== "ios",
+  );
   const [showPassword, setShowPassword] = useState(false);
   const [otpIssue, setOtpIssue] = useState<WhatsAppOtpIssue>(initialOtpIssue);
   const [formError, setFormError] = useState<string | null>(
@@ -220,6 +233,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const phoneInputRef = useRef<any>(null);
   const otpInputRef = useRef<any>(null);
   const otpSubmitLockRef = useRef(false);
+  const lastAuthScreenViewKey = useRef<string | null>(null);
   const { signIn, signUp, signInWithGoogle, signInWithApple, signInWithWhatsAppOtp } =
     useAuth();
   const theme = useTheme();
@@ -249,6 +263,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     ? "Already have an account?"
     : "New to SharedMoney?";
   const accountAction = isSignUp ? "Sign In" : "Create account";
+  const authMode: AuthFunnelMode = isSignUp ? "sign_up" : "sign_in";
+  const trackAuthMethod = (method: AuthFunnelMethod) => {
+    captureAuthMethodSelected(method, authMode);
+  };
 
   useEffect(() => {
     if (!loginShellVisible) return;
@@ -270,20 +288,39 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
     AppleAuthentication.isAvailableAsync()
       .then((available) => {
-        if (mounted) {
-          setAppleSignInAvailable(available);
-        }
+        if (!mounted) return;
+        setAppleSignInAvailable(available);
+        setAppleAvailabilityResolved(true);
       })
       .catch(() => {
-        if (mounted) {
-          setAppleSignInAvailable(false);
-        }
+        if (!mounted) return;
+        setAppleSignInAvailable(false);
+        setAppleAvailabilityResolved(true);
       });
 
     return () => {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!appleAvailabilityResolved) return;
+    const viewKey = `${authStep}|${authMode}`;
+    if (lastAuthScreenViewKey.current === viewKey) return;
+    lastAuthScreenViewKey.current = viewKey;
+    captureAuthScreenViewed({
+      step: authStep,
+      mode: authMode,
+      whatsappEnabled: whatsappOtpEnabled,
+      appleAvailable: appleSignInAvailable,
+    });
+  }, [
+    appleAvailabilityResolved,
+    appleSignInAvailable,
+    authMode,
+    authStep,
+    whatsappOtpEnabled,
+  ]);
 
   useEffect(() => {
     if (authStep === "email") {
@@ -320,6 +357,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   };
 
   const applyOtpApiError = (err: unknown, fallback: string) => {
+    captureAuthFailed(
+      "whatsapp",
+      mapAuthFailureReason(err instanceof Error ? err : fallback),
+    );
     if (err instanceof WhatsAppOtpApiError) {
       switch (err.code) {
         case "WHATSAPP_SEND_FAILED":
@@ -396,6 +437,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   };
 
   const showEmailForm = () => {
+    trackAuthMethod("email");
     clearFormError();
     setAuthStep("email");
   };
@@ -452,6 +494,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         : await signIn(trimmedEmail, password);
 
       if (result.error) {
+        captureAuthFailed("email", mapAuthFailureReason(result.error));
         const errorMessage = result.error.message || "An error occurred";
         const errorTitle = isSignUp ? "Sign Up Failed" : "Sign In Failed";
         setFormError(errorMessage);
@@ -459,6 +502,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       }
     } catch (err) {
       console.error("Unexpected error in authentication:", err);
+      captureAuthFailed("email", mapAuthFailureReason(err));
       Alert.alert("Error", "An unexpected error occurred");
     } finally {
       setLoading(false);
@@ -466,11 +510,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   };
 
   const handleGoogleSignIn = async () => {
+    trackAuthMethod("google");
     setGoogleLoading(true);
     try {
       const { error } = await signInWithGoogle();
       if (error) {
-        if (readSocialAuthKind(error) === "browser_unavailable") {
+        const socialKind = readSocialAuthKind(error);
+        if (!socialKind) {
+          captureAuthFailed("google", mapAuthFailureReason(error));
+        }
+        if (socialKind === "browser_unavailable") {
           Alert.alert(
             "Google sign-in needs a browser",
             error.message,
@@ -487,6 +536,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       }
     } catch (err) {
       console.error("Error in Google sign in:", err);
+      captureAuthFailed("google", mapAuthFailureReason(err));
       Alert.alert("Error", "An unexpected error occurred. Please try again.", [
         { text: "OK", style: "default" },
       ]);
@@ -496,16 +546,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   };
 
   const handleAppleSignIn = async () => {
+    trackAuthMethod("apple");
     setAppleLoading(true);
     try {
       const { error } = await signInWithApple();
       if (error) {
+        if (!readSocialAuthKind(error)) {
+          captureAuthFailed("apple", mapAuthFailureReason(error));
+        }
         Alert.alert("Apple Sign In Failed", error.message || "Failed to sign in with Apple", [
           { text: "OK", style: "default" },
         ]);
       }
     } catch (err) {
       console.error("Error in Apple sign in:", err);
+      captureAuthFailed("apple", mapAuthFailureReason(err));
       Alert.alert("Error", "An unexpected error occurred. Please try again.", [
         { text: "OK", style: "default" },
       ]);
@@ -526,6 +581,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       return;
     }
 
+    trackAuthMethod("whatsapp");
     setWhatsappLoading("send");
     try {
       const result = await sendWhatsAppOtp(normalized);

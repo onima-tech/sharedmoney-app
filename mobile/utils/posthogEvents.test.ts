@@ -1,6 +1,12 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import { ANALYTICS_EVENTS } from "./posthogEvents.ts";
 
+Deno.test("pre-auth sign-in funnel event names stay stable", () => {
+  assertEquals(ANALYTICS_EVENTS.AUTH_SCREEN_VIEWED, "auth_screen_viewed");
+  assertEquals(ANALYTICS_EVENTS.AUTH_METHOD_SELECTED, "auth_method_selected");
+  assertEquals(ANALYTICS_EVENTS.AUTH_FAILED, "auth_failed");
+});
+
 Deno.test("activation funnel event names stay stable for project 563625", () => {
   assertEquals(ANALYTICS_EVENTS.AUTH_SUCCEEDED, "auth_succeeded");
   assertEquals(ANALYTICS_EVENTS.GROUP_CREATED, "group_created");

@@ -25,7 +25,12 @@ import {
 } from "../utils/sentryTelemetry";
 import { resolveAuthSessionTransition } from "../utils/sentryTriagePolicy";
 import { performLocalLogout } from "../utils/logoutFlow";
-import { syncAnalyticsAuth } from "../utils/posthogAnalytics";
+import {
+  authFailureReasonFromSocialFailure,
+  isNewAuthUser,
+  shouldCaptureSocialAuthFailure,
+} from "../utils/authFunnelEvents";
+import { captureAuthFailed, syncAnalyticsAuth } from "../utils/posthogAnalytics";
 import { isWebAuthShellActive } from "../utils/webAuthShell";
 import { forgetWebProfileLabel } from "../utils/webProfileShell";
 import { resolveAuthDisplayName } from "../utils/posthogIdentity";
@@ -171,6 +176,14 @@ function handleSocialAuthFailure(
   if (failure.kind === "cancelled") return { error: null };
 
   recordSocialAuthFailure(failure, attemptId, { retryCount });
+  // Cancels already returned. Profile-name updates are non-blocking, so they
+  // are not sign-in funnel failures (auth_succeeded still fires).
+  if (shouldCaptureSocialAuthFailure(failure.kind, failure.stage)) {
+    captureAuthFailed(
+      failure.provider,
+      authFailureReasonFromSocialFailure(failure),
+    );
+  }
   return { error: createSocialAuthError(failure) };
 }
 function createAppleNonce(byteCount = 32): string {
@@ -332,6 +345,11 @@ const [loading, setLoading] = useState<boolean>(() => !isWebAuthShellActive());
       name: resolveAuthDisplayName(
         user?.user_metadata as Record<string, unknown> | undefined,
       ),
+      is_new_user: isNewAuthUser({
+        createdAt: user?.created_at,
+        lastSignInAt: user?.last_sign_in_at,
+        now: Date.now(),
+      }),
     });
   }, []);
 
