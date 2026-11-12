@@ -133,6 +133,26 @@ export function trackPageView(page: SeoPage) {
   });
 }
 
+export function seoCtaClickedEvent(input: {
+  platform: string;
+  placement: string;
+  device: string;
+  pagePath: string;
+  source?: string;
+}): { event: "seo cta clicked"; properties: Record<string, string> } {
+  const properties: Record<string, string> = {
+    platform: input.platform,
+    placement: input.placement,
+    device: input.device,
+    page_path: input.pagePath,
+  };
+  const source = input.source?.trim();
+  if (source) {
+    properties.source = source;
+  }
+  return { event: "seo cta clicked", properties };
+}
+
 export function trackCtaClick(
   destination: PlatformDestination,
   placement: string,
@@ -145,12 +165,14 @@ export function trackCtaClick(
   const pathname =
     typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") || "/" : "";
 
-  capture("seo cta clicked", {
+  const tracked = seoCtaClickedEvent({
     platform: destination.platform,
     placement,
     device: detectDevice(),
-    page_path: pathname,
+    pagePath: pathname,
+    source: source?.dataset.source,
   });
+  capture(tracked.event, tracked.properties);
 }
 
 export function trackToolStarted(tool: SeoTool) {
