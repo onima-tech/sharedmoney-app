@@ -43,6 +43,27 @@ Deno.test("logged-out mobile visits paint the login shell", () => {
   );
 });
 
+Deno.test("an invite join URL skips the login shell", () => {
+  assertEquals(
+    shouldPaintWebAuthShell({
+      pathname: "/app/join/abc",
+      search: "",
+      hash: "",
+      storageEntries: [],
+    }),
+    false,
+  );
+  assertEquals(
+    shouldPaintWebAuthShell({
+      pathname: "/join/abc",
+      search: "",
+      hash: "",
+      storageEntries: [],
+    }),
+    false,
+  );
+});
+
 Deno.test("a stored Supabase session or an OAuth return skips the login shell", () => {
   assertEquals(
     shouldPaintWebAuthShell({
@@ -113,6 +134,7 @@ Deno.test("bootstrap script paints the shell only for an empty logged-out visit"
   const script = webAuthShellBootstrapScript();
 
   const paint = (page: {
+    pathname?: string;
     search?: string;
     hash?: string;
     entries?: Array<[string, string]>;
@@ -151,12 +173,14 @@ Deno.test("bootstrap script paints the shell only for an empty logged-out visit"
       {
         getItem: (key: string) => (key === "theme" ? page.sessionTheme ?? null : null),
       },
-      { search: page.search ?? "", hash: page.hash ?? "" },
+      { pathname: page.pathname ?? "", search: page.search ?? "", hash: page.hash ?? "" },
     );
     return { attr: attrs.get(WEB_AUTH_SHELL_ATTR), classes };
   };
 
   assertEquals(paint({}).attr, "1");
+  assertEquals(paint({ pathname: "/app/join/abc" }).attr, "0");
+  assertEquals(paint({ pathname: "/join/deadbeef", throwStorage: true }).attr, "0");
   assertEquals(
     paint({
       entries: [["sb-ref-auth-token", '{"access_token":"x"}']],

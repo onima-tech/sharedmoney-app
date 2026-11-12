@@ -141,13 +141,16 @@ import {
   selectRecentEmailInviteJoins,
   shouldCaptureGroupJoinedFromRedeem,
 } from "./utils/groupJoinedAnalytics";
+import { bindInviteLandingAnalytics } from "./utils/inviteLandingAnalytics";
 import {
+  captureAnalyticsEvent,
   captureIdentifiedAnalyticsEvent,
   captureScreenView,
   initializePostHog,
 } from "./utils/posthogAnalytics";
 import { enableSpeedInsights } from "./utils/speedInsights";
 import { dismissWebAuthShell } from "./utils/webAuthShell";
+import { dismissWebJoinShell } from "./utils/webJoinShell";
 import { dismissWebProfileShell, isWebProfileShellActive } from "./utils/webProfileShell";
 import { ANALYTICS_EVENTS } from "./utils/posthogEvents";
 import {
@@ -997,6 +1000,10 @@ function AppContent() {
 
   useEffect(() => {
     if (session) dismissWebAuthShell();
+  }, [session]);
+
+  useEffect(() => {
+    if (session) dismissWebJoinShell();
   }, [session]);
 
   // The profile hero is the logged-in LCP element. Keep it while Profile is
@@ -1928,6 +1935,7 @@ if (!process.env.EXPO_PUBLIC_SENTRY_DSN) {
 // Initialize PostHog once at startup. Guard against a missing project key so
 // local/dev builds stay quiet when SharedMoney Production analytics is unset.
 initializePostHog();
+bindInviteLandingAnalytics(captureAnalyticsEvent);
 // Browser web vitals for the /app export. Native builds no-op.
 enableSpeedInsights();
 
