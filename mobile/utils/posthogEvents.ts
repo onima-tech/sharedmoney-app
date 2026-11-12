@@ -11,6 +11,25 @@
  * 4. `settlement_recorded` — settlement create
  *
  * Do not invent `signup_completed`; auth_succeeded is the identity signal.
+ * `auth_succeeded` props: `auth_provider`, `platform`, `is_new_user` (true when
+ * Supabase `created_at` is within 10 minutes of `last_sign_in_at`, else now).
+ *
+ * Pre-auth sign-in funnel (anonymous until auth_succeeded; enums and booleans
+ * only — never email, phone, name, token, or raw error text):
+ * - `auth_screen_viewed` — once per AuthScreen mount, and again when `step` or
+ *   sign-in/sign-up mode changes. Re-renders with the same step and mode do
+ *   not refire. On iOS the first event waits until Apple availability is
+ *   known. Props: `step` (`methods` | `email` | `phone` | `otp`), `mode`
+ *   (`sign_in` | `sign_up`), `platform`, `whatsapp_enabled`, `apple_available`.
+ * - `auth_method_selected` — tap Apple, Google, "Continue with email", or
+ *   WhatsApp "Send code" (after the phone number validates). Props: `method`
+ *   (`apple` | `google` | `email` | `whatsapp`), `mode`, `platform`.
+ * - `auth_failed` — a provider or API failure already shown on AuthScreen
+ *   (Google, Apple, email sign-in/sign-up, WhatsApp send/verify), and the
+ *   non-cancel social failure path in AuthContext. Props: `method`,
+ *   `reason_code`, `platform`. User cancels are classified as `cancelled` and
+ *   are not captured. Apple profile-name update failures are not captured
+ *   either, because sign-in still succeeds.
  *
  * `group_joined` props: `group_id`, `join_method` (`invite_link` | `email_invite`).
  * Fires on invite-link redeem status `joined`, and once for email invitations
@@ -34,6 +53,12 @@
  */
 export const ANALYTICS_EVENTS = {
   AUTH_SUCCEEDED: "auth_succeeded",
+  /** Auth screen mount, and again when step or sign-in/sign-up mode changes. */
+  AUTH_SCREEN_VIEWED: "auth_screen_viewed",
+  /** Apple, Google, Continue with email, or WhatsApp send code. */
+  AUTH_METHOD_SELECTED: "auth_method_selected",
+  /** Provider/API auth failure. No PII. User cancels are not captured. */
+  AUTH_FAILED: "auth_failed",
   GROUP_CREATED: "group_created",
   GROUP_JOINED: "group_joined",
   EXPENSE_CREATED: "expense_created",

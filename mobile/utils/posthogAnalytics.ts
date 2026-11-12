@@ -1,6 +1,16 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import PostHog from "posthog-react-native";
 import { Platform } from "react-native";
+import {
+  authFailedProperties,
+  authMethodSelectedProperties,
+  authScreenViewedProperties,
+  authSucceededProperties,
+  type AuthFailureReasonCode,
+  type AuthFunnelMethod,
+  type AuthFunnelMode,
+  type AuthFunnelStep,
+} from "./authFunnelEvents";
 import { resolvePostHogEnvConfig } from "./posthogConfig";
 import { ANALYTICS_EVENTS } from "./posthogEvents";
 import {
@@ -113,6 +123,62 @@ export function captureIdentifiedAnalyticsEvent(
   captureAnalyticsEvent(event, properties);
 }
 
+/**
+ * Auth screen impression. No-ops when PostHog is absent or a seed/E2E user
+ * is suppressing capture. Props are enums and booleans only.
+ */
+export function captureAuthScreenViewed(input: {
+  step: AuthFunnelStep;
+  mode: AuthFunnelMode;
+  whatsappEnabled: boolean;
+  appleAvailable: boolean;
+}): void {
+  captureAnalyticsEvent(
+    ANALYTICS_EVENTS.AUTH_SCREEN_VIEWED,
+    authScreenViewedProperties({
+      step: input.step,
+      mode: input.mode,
+      platform: Platform.OS,
+      whatsappEnabled: input.whatsappEnabled,
+      appleAvailable: input.appleAvailable,
+    }),
+  );
+}
+
+/** Method tap. No-ops when PostHog is absent or capture is suppressed. */
+export function captureAuthMethodSelected(
+  method: AuthFunnelMethod,
+  mode: AuthFunnelMode,
+): void {
+  captureAnalyticsEvent(
+    ANALYTICS_EVENTS.AUTH_METHOD_SELECTED,
+    authMethodSelectedProperties({
+      method,
+      mode,
+      platform: Platform.OS,
+    }),
+  );
+}
+
+/**
+ * Provider/API auth failure. User cancels (`reason_code=cancelled`) are not
+ * sent. No-ops when PostHog is absent or capture is suppressed.
+ */
+export function captureAuthFailed(
+  method: AuthFunnelMethod,
+  reasonCode: AuthFailureReasonCode,
+): void {
+  if (reasonCode === "cancelled") return;
+  captureAnalyticsEvent(
+    ANALYTICS_EVENTS.AUTH_FAILED,
+    authFailedProperties({
+      method,
+      reasonCode,
+      platform: Platform.OS,
+    }),
+  );
+}
+
 export function captureScreenView(screen: string): void {
   if (!client || !screen) return;
   captureAnalyticsEvent(ANALYTICS_EVENTS.MOBILE_SCREEN_VIEWED, {
@@ -182,6 +248,7 @@ export function syncAnalyticsAuth(
     auth_provider?: string;
     email?: string;
     name?: string;
+    is_new_user?: boolean;
   },
 ): void {
   if (!client) return;
@@ -204,10 +271,14 @@ export function syncAnalyticsAuth(
       name: properties?.name,
     });
     if (isNewIdentity) {
-      captureAnalyticsEvent(ANALYTICS_EVENTS.AUTH_SUCCEEDED, {
-        auth_provider: properties?.auth_provider || "unknown",
-        platform: Platform.OS,
-      });
+      captureAnalyticsEvent(
+        ANALYTICS_EVENTS.AUTH_SUCCEEDED,
+        authSucceededProperties({
+          authProvider: properties?.auth_provider || "unknown",
+          platform: Platform.OS,
+          isNewUser: properties?.is_new_user === true,
+        }),
+      );
     }
     return;
   }
