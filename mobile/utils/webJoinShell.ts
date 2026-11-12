@@ -25,6 +25,7 @@ export const WEB_JOIN_SHELL_ATTR = "data-sm-join-shell";
 export const WEB_JOIN_SHELL_ID = "sm-join-shell";
 export const WEB_JOIN_NOSCRIPT_ID = "sm-join-noscript";
 export const WEB_JOIN_OPEN_ID = "sm-join-open";
+export const WEB_JOIN_WEB_ID = "sm-join-web";
 export const WEB_JOIN_SHELL_TITLE = "You're invited to a SharedMoney group";
 export const WEB_JOIN_SHELL_TAGLINE = "No daily limits, no ads, no bank link.";
 export const WEB_JOIN_SHELL_PLAY_LABEL = "Google Play";
@@ -76,6 +77,13 @@ export function readInviteJoinToken(pathname: string): string | null {
 
 export function inviteOpenAppHref(token: string): string {
   return `sharedmoney://join/${token}`;
+}
+
+/** Same join URL the visitor is already on, including the token. */
+export function inviteWebContinueHref(pathname: string, search = ""): string {
+  const path = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  const query = search && !search.startsWith("?") ? `?${search}` : search;
+  return `${path}${query}`;
 }
 
 export function shouldPaintWebJoinShell(input: {
@@ -152,13 +160,13 @@ export function webJoinShellHeadScript(): string {
   const allowed = `{${INVITE_LANDING_CTAS.map((cta) => `${JSON.stringify(cta)}:1`).join(",")}}`;
   const joinRe = regexLiteral(JOIN_PATH_SOURCE);
 
-  return `(function(){var ATTR=${JSON.stringify(WEB_JOIN_SHELL_ATTR)};var JOIN=${joinRe};function queue(event,cta){try{var props={source:${source}};if(cta)props.cta=cta;var capture=globalThis[${captureKey}];if(typeof capture==="function"){capture(event,props);return true;}var raw=sessionStorage.getItem(${queueKey});var list=[];try{list=raw?JSON.parse(raw):[];}catch(err){list=[];}if(!Array.isArray(list))list=[];if(list.length>=8)return false;var item={event:event};if(cta)item.cta=cta;list.push(item);sessionStorage.setItem(${queueKey},JSON.stringify(list));return true;}catch(err){return false;}}function paintTheme(){try{var pref=localStorage.getItem("sharedmoney.themePreference")||localStorage.getItem("owewho.themePreference");var landing=null;try{landing=sessionStorage.getItem("theme");}catch(err){}var theme=landing==="light"||landing==="dark"?landing:(pref==="light"||pref==="dark"?pref:null);if(theme==="dark")document.documentElement.classList.add("sm-join-dark");if(theme==="light")document.documentElement.classList.add("sm-join-light");}catch(err){}}function show(){document.documentElement.setAttribute(ATTR,"1");document.title=${title};paintTheme();if(!queue(${viewEvent}))document.documentElement.setAttribute(${pendingAttr},"1");document.addEventListener("click",function(ev){var node=ev.target;if(node&&node.nodeType===3)node=node.parentElement;var ctaNode=node&&node.closest?node.closest("[data-invite-cta]"):null;if(!ctaNode)return;var cta=ctaNode.getAttribute("data-invite-cta");var allowed=${allowed};if(!allowed[cta])return;queue(${clickEvent},cta);if(cta==="web_app"){if(ev.preventDefault)ev.preventDefault();document.documentElement.setAttribute(ATTR,"0");var shell=document.getElementById(${JSON.stringify(WEB_JOIN_SHELL_ID)});if(shell&&shell.remove)shell.remove();}},true);}try{var path=location.pathname||"";var join=JOIN.test(path);var params=new URLSearchParams(location.search);var hash=location.hash||"";var oauth=params.has("code")||params.has("error")||hash.indexOf("access_token")!==-1||hash.indexOf("refresh_token")!==-1||hash.indexOf("error_description")!==-1;var hasSession=false;if(join&&!oauth){for(var i=0;i<localStorage.length;i++){var key=localStorage.key(i);if(!key||key.indexOf("auth-token")===-1)continue;var raw=localStorage.getItem(key);if(raw&&raw.indexOf("access_token")!==-1){hasSession=true;break;}}}var paint=join&&!oauth&&!hasSession;document.documentElement.setAttribute(ATTR,paint?"1":"0");if(!paint){if(hasSession&&join)document.title="SharedMoney";return;}show();}catch(e){try{if(JOIN.test(location.pathname||""))show();}catch(err){}}})();`;
+  return `(function(){var ATTR=${JSON.stringify(WEB_JOIN_SHELL_ATTR)};var JOIN=${joinRe};function queue(event,cta){try{var props={source:${source}};if(cta)props.cta=cta;var capture=globalThis[${captureKey}];if(typeof capture==="function"){capture(event,props);return true;}var raw=sessionStorage.getItem(${queueKey});var list=[];try{list=raw?JSON.parse(raw):[];}catch(err){list=[];}if(!Array.isArray(list))list=[];if(list.length>=8)return false;var item={event:event};if(cta)item.cta=cta;list.push(item);sessionStorage.setItem(${queueKey},JSON.stringify(list));return true;}catch(err){return false;}}function paintTheme(){try{var pref=localStorage.getItem("sharedmoney.themePreference")||localStorage.getItem("owewho.themePreference");var landing=null;try{landing=sessionStorage.getItem("theme");}catch(err){}var theme=landing==="light"||landing==="dark"?landing:(pref==="light"||pref==="dark"?pref:null);if(theme==="dark")document.documentElement.classList.add("sm-join-dark");if(theme==="light")document.documentElement.classList.add("sm-join-light");}catch(err){}}function show(){document.documentElement.setAttribute(ATTR,"1");document.title=${title};paintTheme();if(!queue(${viewEvent}))document.documentElement.setAttribute(${pendingAttr},"1");document.addEventListener("click",function(ev){var node=ev.target;if(node&&node.nodeType===3)node=node.parentElement;var ctaNode=node&&node.closest?node.closest("[data-invite-cta]"):null;if(!ctaNode)return;var cta=ctaNode.getAttribute("data-invite-cta");var allowed=${allowed};if(!allowed[cta])return;queue(${clickEvent},cta);if(cta==="web_app"){if(ev.preventDefault)ev.preventDefault();document.documentElement.setAttribute(ATTR,"0");document.documentElement.setAttribute("data-sm-auth-shell","1");document.title="SharedMoney";var shell=document.getElementById(${JSON.stringify(WEB_JOIN_SHELL_ID)});if(shell&&shell.remove)shell.remove();}},true);}try{var path=location.pathname||"";var join=JOIN.test(path);var params=new URLSearchParams(location.search);var hash=location.hash||"";var oauth=params.has("code")||params.has("error")||hash.indexOf("access_token")!==-1||hash.indexOf("refresh_token")!==-1||hash.indexOf("error_description")!==-1;var hasSession=false;if(join&&!oauth){for(var i=0;i<localStorage.length;i++){var key=localStorage.key(i);if(!key||key.indexOf("auth-token")===-1)continue;var raw=localStorage.getItem(key);if(raw&&raw.indexOf("access_token")!==-1){hasSession=true;break;}}}var paint=join&&!oauth&&!hasSession;document.documentElement.setAttribute(ATTR,paint?"1":"0");if(!paint){if(hasSession&&join)document.title="SharedMoney";return;}show();}catch(e){try{if(JOIN.test(location.pathname||""))show();}catch(err){}}})();`;
 }
 
 export function webJoinShellBodyScript(): string {
   const tokenRe = regexLiteral(TOKEN_PATH_SOURCE);
   const safeRe = regexLiteral(TOKEN_SAFE_SOURCE);
-  return `(function(){try{if(document.documentElement.getAttribute(${JSON.stringify(WEB_JOIN_SHELL_ATTR)})!=="1")return;var open=document.getElementById(${JSON.stringify(WEB_JOIN_OPEN_ID)});if(!open)return;var match=(location.pathname||"").match(${tokenRe});var token=match?match[1]:"";if(!${safeRe}.test(token))return;open.setAttribute("href","sharedmoney://join/"+token);open.removeAttribute("hidden");}catch(e){}})();`;
+  return `(function(){try{if(document.documentElement.getAttribute(${JSON.stringify(WEB_JOIN_SHELL_ATTR)})!=="1")return;var path=location.pathname||"";var search=location.search||"";var web=document.getElementById(${JSON.stringify(WEB_JOIN_WEB_ID)});if(web)web.setAttribute("href",path+search);var open=document.getElementById(${JSON.stringify(WEB_JOIN_OPEN_ID)});if(!open)return;var match=path.match(${tokenRe});var token=match?match[1]:"";if(!${safeRe}.test(token))return;open.setAttribute("href","sharedmoney://join/"+token);open.removeAttribute("hidden");}catch(e){}})();`;
 }
 
 function shellMark(logoSrc?: string): string {
@@ -179,10 +187,10 @@ function pageMarkup(id: string, logoSrc: string | undefined, actions: string): s
 
 function shellActions(): string {
   return [
+    `<a id="${WEB_JOIN_OPEN_ID}" class="sm-join-open" data-invite-cta="open_app" href="sharedmoney://join" hidden>${WEB_JOIN_SHELL_OPEN_LABEL}</a>`,
     storeLink(WEB_JOIN_SHELL_PLAY_LABEL, STORE_URL_ANDROID, "play"),
     storeLink(WEB_JOIN_SHELL_IOS_LABEL, STORE_URL_IOS, "app_store"),
-    `<a id="${WEB_JOIN_OPEN_ID}" class="sm-join-open" data-invite-cta="open_app" href="sharedmoney://join" hidden>${WEB_JOIN_SHELL_OPEN_LABEL}</a>`,
-    `<a class="sm-join-web" data-invite-cta="web_app" href="/app">${WEB_JOIN_SHELL_WEB_LABEL}</a>`,
+    `<a id="${WEB_JOIN_WEB_ID}" class="sm-join-web" data-invite-cta="web_app" href="">${WEB_JOIN_SHELL_WEB_LABEL}</a>`,
   ].join("");
 }
 
@@ -217,7 +225,7 @@ function shellCss(): string {
     `.sm-join-actions{width:100%;display:flex;flex-direction:column;gap:12px;margin-top:30px;}`,
     `.sm-join-store,.sm-join-open{display:flex;align-items:center;justify-content:center;box-sizing:border-box;width:100%;min-height:48px;padding:0 16px;border-radius:24px;font-size:16px;line-height:24px;font-weight:600;text-align:center;text-decoration:none;}`,
     `.sm-join-store{border:1px solid ${LIGHT_OUTLINE};background:${LIGHT_SURFACE};color:${LIGHT_INK};}`,
-    `.sm-join-open{border:0;background:transparent;color:${LIGHT_ACTION};}`,
+    `.sm-join-open{border:0;background:${LIGHT_ACTION};color:#FFFFFF;}`,
     `#${WEB_JOIN_OPEN_ID}[hidden]{display:none !important;}`,
     `.sm-join-web{display:flex;align-items:center;justify-content:center;min-height:40px;margin-top:4px;font-size:14px;line-height:20px;font-weight:600;color:${LIGHT_SUBTITLE};text-decoration:none;}`,
     `.sm-join-store:focus-visible,.sm-join-open:focus-visible,.sm-join-web:focus-visible{outline:2px solid ${LIGHT_ACTION};outline-offset:2px;}`,
@@ -226,7 +234,7 @@ function shellCss(): string {
     `html[${WEB_JOIN_SHELL_ATTR}="1"]:not(.sm-join-light) #${WEB_JOIN_SHELL_ID} h1{color:${DARK_INK};}`,
     `html[${WEB_JOIN_SHELL_ATTR}="1"]:not(.sm-join-light) #${WEB_JOIN_SHELL_ID} .sm-join-tagline,html[${WEB_JOIN_SHELL_ATTR}="1"]:not(.sm-join-light) #${WEB_JOIN_SHELL_ID} .sm-join-web{color:${DARK_SUBTITLE};}`,
     `html[${WEB_JOIN_SHELL_ATTR}="1"]:not(.sm-join-light) #${WEB_JOIN_SHELL_ID} .sm-join-store{background:${DARK_SURFACE};border-color:${DARK_OUTLINE};color:${DARK_INK};}`,
-    `html[${WEB_JOIN_SHELL_ATTR}="1"]:not(.sm-join-light) #${WEB_JOIN_SHELL_ID} .sm-join-open{color:${DARK_ACTION};}`,
+    `html[${WEB_JOIN_SHELL_ATTR}="1"]:not(.sm-join-light) #${WEB_JOIN_SHELL_ID} .sm-join-open{background:${DARK_ACTION};color:#101827;}`,
     `#${WEB_JOIN_NOSCRIPT_ID}.sm-join-page{background:${DARK_CANVAS};color:${DARK_INK};}`,
     `#${WEB_JOIN_NOSCRIPT_ID} h1{color:${DARK_INK};}`,
     `#${WEB_JOIN_NOSCRIPT_ID} .sm-join-tagline{color:${DARK_SUBTITLE};}`,
@@ -236,12 +244,12 @@ function shellCss(): string {
     `html[${WEB_JOIN_SHELL_ATTR}="1"].sm-join-dark #${WEB_JOIN_SHELL_ID} h1{color:${DARK_INK};}`,
     `html[${WEB_JOIN_SHELL_ATTR}="1"].sm-join-dark #${WEB_JOIN_SHELL_ID} .sm-join-tagline,html[${WEB_JOIN_SHELL_ATTR}="1"].sm-join-dark #${WEB_JOIN_SHELL_ID} .sm-join-web{color:${DARK_SUBTITLE};}`,
     `html[${WEB_JOIN_SHELL_ATTR}="1"].sm-join-dark #${WEB_JOIN_SHELL_ID} .sm-join-store{background:${DARK_SURFACE};border-color:${DARK_OUTLINE};color:${DARK_INK};}`,
-    `html[${WEB_JOIN_SHELL_ATTR}="1"].sm-join-dark #${WEB_JOIN_SHELL_ID} .sm-join-open{color:${DARK_ACTION};}`,
+    `html[${WEB_JOIN_SHELL_ATTR}="1"].sm-join-dark #${WEB_JOIN_SHELL_ID} .sm-join-open{background:${DARK_ACTION};color:#101827;}`,
     `html[${WEB_JOIN_SHELL_ATTR}="1"].sm-join-light,html[${WEB_JOIN_SHELL_ATTR}="1"].sm-join-light body,html[${WEB_JOIN_SHELL_ATTR}="1"].sm-join-light #${WEB_JOIN_SHELL_ID}.sm-join-page{background:${LIGHT_CANVAS};}`,
     `html[${WEB_JOIN_SHELL_ATTR}="1"].sm-join-light #${WEB_JOIN_SHELL_ID} h1{color:${LIGHT_INK};}`,
     `html[${WEB_JOIN_SHELL_ATTR}="1"].sm-join-light #${WEB_JOIN_SHELL_ID} .sm-join-tagline,html[${WEB_JOIN_SHELL_ATTR}="1"].sm-join-light #${WEB_JOIN_SHELL_ID} .sm-join-web{color:${LIGHT_SUBTITLE};}`,
     `html[${WEB_JOIN_SHELL_ATTR}="1"].sm-join-light #${WEB_JOIN_SHELL_ID} .sm-join-store{background:${LIGHT_SURFACE};border-color:${LIGHT_OUTLINE};color:${LIGHT_INK};}`,
-    `html[${WEB_JOIN_SHELL_ATTR}="1"].sm-join-light #${WEB_JOIN_SHELL_ID} .sm-join-open{color:${LIGHT_ACTION};}`,
+    `html[${WEB_JOIN_SHELL_ATTR}="1"].sm-join-light #${WEB_JOIN_SHELL_ID} .sm-join-open{background:${LIGHT_ACTION};color:#FFFFFF;}`,
   ].join("");
 }
 

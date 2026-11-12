@@ -18,6 +18,7 @@ import {
   WEB_JOIN_NOSCRIPT_ID,
   WEB_JOIN_OPEN_ID,
   WEB_JOIN_SHELL_ATTR,
+  WEB_JOIN_WEB_ID,
   WEB_JOIN_SHELL_COLUMN_PX,
   WEB_JOIN_SHELL_ID,
   WEB_JOIN_SHELL_IOS_LABEL,
@@ -34,6 +35,7 @@ import {
   assertJoinShellDocument,
   injectWebJoinShell,
   inviteOpenAppHref,
+  inviteWebContinueHref,
   isInviteJoinPath,
   readInviteJoinToken,
   shouldPaintWebJoinShell,
@@ -71,6 +73,11 @@ Deno.test("only a safe path segment becomes the open-in-app link", () => {
   assertEquals(readInviteJoinToken("/app/join/%3Cscript%3E"), null);
   assertEquals(readInviteJoinToken("/app/groups/abc"), null);
   assertEquals(inviteOpenAppHref(TOKEN), `sharedmoney://join/${TOKEN}`);
+  assertEquals(
+    inviteWebContinueHref(`/app/join/${TOKEN}`, "?utm=share"),
+    `/app/join/${TOKEN}?utm=share`,
+  );
+  assertEquals(inviteWebContinueHref(`/app/join/${TOKEN}`), `/app/join/${TOKEN}`);
 });
 
 Deno.test("the invite shell paints for a logged-out join visit only", () => {
@@ -148,6 +155,22 @@ Deno.test("standalone join document has a real title, store links, and a noscrip
   assertEquals(html.replaceAll("text-wrap:balance", "").includes("balance"), false);
   assertEquals(html.includes("email"), false);
   assertEquals(html.includes("phone"), false);
+  assertEquals(html.includes('href="/app"'), false);
+  assertEquals(html.includes(".sm-join-open{border:0;background:#1F5EFF;color:#FFFFFF;}"), true);
+  assertEquals(html.includes("min-height:48px"), true);
+  const shellHtml = html.slice(html.indexOf(`id="${WEB_JOIN_SHELL_ID}"`));
+  assertEquals(
+    shellHtml.indexOf(WEB_JOIN_SHELL_OPEN_LABEL) < shellHtml.indexOf('data-invite-cta="play"'),
+    true,
+  );
+  assertEquals(
+    shellHtml.indexOf('data-invite-cta="play"') < shellHtml.indexOf('data-invite-cta="app_store"'),
+    true,
+  );
+  assertEquals(
+    shellHtml.indexOf('data-invite-cta="app_store"') < shellHtml.indexOf('data-invite-cta="web_app"'),
+    true,
+  );
 
   const shared = injectWebJoinShell(EXPO_INDEX);
   assertEquals(shared.includes("<title>SharedMoney</title>"), true);
@@ -208,6 +231,12 @@ Deno.test("bootstrap paints the invite shell, queues a view, and fills the deep 
         if (name === "hidden") open.hidden = false;
       },
     };
+    const web = {
+      href: "",
+      setAttribute: (name: string, value: string) => {
+        if (name === "href") web.href = value;
+      },
+    };
     const state = { removed: false };
     const listeners: Array<(event: { target: unknown; preventDefault: () => void }) => void> = [];
     const shell = { remove: () => { state.removed = true; } };
@@ -249,6 +278,7 @@ Deno.test("bootstrap paints the invite shell, queues a view, and fills the deep 
           ) => listeners.push(listener),
           getElementById: (id: string) => {
             if (id === WEB_JOIN_OPEN_ID) return open;
+            if (id === WEB_JOIN_WEB_ID) return web;
             if (id === WEB_JOIN_SHELL_ID) return shell;
             return null;
           },
@@ -284,6 +314,7 @@ Deno.test("bootstrap paints the invite shell, queues a view, and fills the deep 
       classes,
       queue: session.get(INVITE_LANDING_QUEUE_KEY) ?? null,
       href: open.href,
+      webHref: web.href,
       hidden: open.hidden,
       listeners,
       get removed() {
@@ -296,6 +327,7 @@ Deno.test("bootstrap paints the invite shell, queues a view, and fills the deep 
   const loggedOut = run({ pathname: `/app/join/${TOKEN}` });
   assertEquals(loggedOut.attr, "1");
   assertEquals(loggedOut.href, `sharedmoney://join/${TOKEN}`);
+  assertEquals(loggedOut.webHref, `/app/join/${TOKEN}`);
   assertEquals(loggedOut.hidden, false);
   const queued = JSON.parse(loggedOut.queue ?? "[]") as Array<{ event: string; cta?: string }>;
   assertEquals(queued, [{ event: ANALYTICS_EVENTS.INVITE_LANDING_VIEWED }]);
@@ -341,6 +373,8 @@ Deno.test("bootstrap paints the invite shell, queues a view, and fills the deep 
   });
   assertEquals(clickWeb.prevented, true);
   assertEquals(withCapture.removed, true);
+  assertEquals(withCapture.attrs.get("data-sm-auth-shell"), "1");
+  assertEquals(withCapture.attrs.get(WEB_JOIN_SHELL_ATTR), "0");
   assertEquals(clicked[1]?.properties, { source: "invite_join", cta: "web_app" });
   assertEquals(JSON.stringify(clicked).includes(TOKEN), false);
 });
