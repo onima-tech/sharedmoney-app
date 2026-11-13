@@ -6,6 +6,8 @@ export type GroupsPhase2Shot =
   | "settle"
   | "compact"
   | "placeholder"
+  | "loading"
+  | "unify"
   | "cached"
   | "balances"
   | "detail-equal"
@@ -20,6 +22,8 @@ const SHOTS: readonly GroupsPhase2Shot[] = [
   "settle",
   "compact",
   "placeholder",
+  "loading",
+  "unify",
   "cached",
   "balances",
   "detail-equal",

@@ -127,7 +127,7 @@ Deno.test("converted amount keeps the original total and one rate line", () => {
   });
   assertEquals(detail.amountText, "฿1,200");
   assertEquals(detail.yourLine, "You lent ฿800");
-  assertEquals(detail.rateLine, "Converted ₹3,112.50 at 2.5938");
+  assertEquals(detail.rateLine, "Converted ₹3,112.50 at 2.59");
 });
 
 Deno.test("payment detail is a title and an unsigned amount", () => {

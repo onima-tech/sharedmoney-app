@@ -143,9 +143,7 @@ function rateLineFor(input: {
   const quote = resolveRate(from, to, input.rateBook);
   const converted = convertAmount(input.amount, from, to, input.rateBook);
   if (!quote || converted == null) return null;
-  const rateText = quote.rate >= 10
-    ? quote.rate.toFixed(2)
-    : quote.rate.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+  const rateText = quote.rate.toFixed(2);
   return `Converted ${formatShareCurrency(roundMoney(converted, to), to)} at ${rateText}`;
 }
 

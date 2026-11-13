@@ -95,6 +95,13 @@ const owedBalances: Balance[] = [
   { user_id: "meera", participant_id: "p-meera", full_name: "Meera", amount: -800, currency: "INR" },
 ];
 
+const mixedBalances: Balance[] = [
+  { user_id: VIEWER, participant_id: "p-me", full_name: "You", amount: 50, currency: "USD" },
+  { user_id: "rahul", participant_id: "p-rahul", full_name: "Rahul", amount: -50, currency: "USD" },
+  { user_id: VIEWER, participant_id: "p-me", full_name: "You", amount: -30, currency: "EUR" },
+  { user_id: "meera", participant_id: "p-meera", full_name: "Meera", amount: 30, currency: "EUR" },
+];
+
 function detailFor(shot: GroupsPhase2Shot) {
   const shared = {
     viewerUserId: VIEWER,
@@ -146,15 +153,17 @@ export function GroupsPhase2PreviewScreen({ shot }: { shot: GroupsPhase2Shot }) 
   }
 
   const even = shot === "even";
-  const loading = shot === "placeholder";
+  const loading = shot === "placeholder" || shot === "loading";
   const compact = shot === "compact";
   const settle = shot === "settle";
-  const balances = even
-    ? [
-      { user_id: VIEWER, participant_id: "p-me", full_name: "You", amount: 0, currency: "INR" },
-      { user_id: "rahul", participant_id: "p-rahul", full_name: "Rahul", amount: 0, currency: "INR" },
-    ]
-    : owedBalances;
+  const balances = shot === "unify"
+    ? mixedBalances
+    : even
+      ? [
+        { user_id: VIEWER, participant_id: "p-me", full_name: "You", amount: 0, currency: "INR" },
+        { user_id: "rahul", participant_id: "p-rahul", full_name: "Rahul", amount: 0, currency: "INR" },
+      ]
+      : owedBalances;
   const ledger = buildTransactionsLedger(
     even ? [] : [dinner, scooter, taxi, beach],
     even ? [] : [payment],
@@ -182,12 +191,14 @@ export function GroupsPhase2PreviewScreen({ shot }: { shot: GroupsPhase2Shot }) 
         <Text
           variant="bodySmall"
           testID="group-compact-line"
+          accessibilityRole="button"
+          onPress={() => {}}
           style={{ color: theme.colors.onSurfaceVariant, paddingHorizontal: 16, marginTop: -4, marginBottom: 4 }}
         >
           {compactLine}
         </Text>
       ) : null}
-      <ScrollView contentContainerStyle={styles.list}>
+      <ScrollView testID="group-ledger-scroll" contentContainerStyle={styles.list}>
         {compact ? null : (
           <GroupDashboard
             groupName="Goa trip"
@@ -195,6 +206,7 @@ export function GroupsPhase2PreviewScreen({ shot }: { shot: GroupsPhase2Shot }) 
             currentUserId={VIEWER}
             currentUserParticipantId="p-me"
             loading={loading}
+            loadingLine={shot === "loading" ? "Loading balances…" : null}
             balanceError={shot === "balances"}
             onBalancesRetry={() => {}}
             onOpenSettle={() => {}}
@@ -262,7 +274,7 @@ export function GroupsPhase2PreviewScreen({ shot }: { shot: GroupsPhase2Shot }) 
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  list: { paddingBottom: 168 },
+  list: { paddingBottom: 220 },
   fab: {
     position: "absolute",
     right: 16,

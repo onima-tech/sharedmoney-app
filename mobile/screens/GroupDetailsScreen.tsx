@@ -177,8 +177,11 @@ type GroupDetailsListRow =
   | { kind: "ledger"; key: string; item: LedgerItem }
   | { kind: "activity"; key: string; entry: ActivityFeedEntry };
 
-/** Room under the last row so the Add expense pill never covers it. */
-const LEDGER_FAB_INSET = 112;
+/**
+ * Room under the last row so the Add expense pill never covers it.
+ * Tall enough that a settle list can scroll Dinner and the day header clear.
+ */
+const LEDGER_FAB_INSET = 176;
 
 interface GroupDetailsScreenProps {
   group: GroupWithMembers;
@@ -2126,6 +2129,16 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
         <Text
           variant="bodySmall"
           testID="group-compact-line"
+          accessibilityRole={position.showSettle || position.showUnifyLine ? "button" : undefined}
+          accessibilityLabel={position.compactLine}
+          onPress={position.showUnifyLine
+            ? () => setShowCurrencySettings(true)
+            : position.showSettle
+              ? () => {
+                setSettleListOpen(true);
+                mainListRef.current?.scrollToOffset({ offset: 0, animated: true });
+              }
+              : undefined}
           style={{ color: theme.colors.onSurfaceVariant, paddingHorizontal: 16, marginTop: -4, marginBottom: 4 }}
         >
           {position.compactLine}
