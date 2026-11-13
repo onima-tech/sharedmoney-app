@@ -7,6 +7,7 @@ import {
   Chip,
   Divider,
   IconButton,
+  Menu,
   Surface,
   Text,
   TextInput,
@@ -54,6 +55,10 @@ const FRIDAY_DINNER = {
 };
 
 export function DefaultSplitPreviewScreen({ shot }: { shot: DefaultSplitShot }) {
+  if (shot === "menu") {
+    return <GroupMenuPreview />;
+  }
+
   if (shot === "settings-equal" || shot === "settings-weights") {
     return (
       <GroupDefaultSplitSheet
@@ -70,6 +75,47 @@ export function DefaultSplitPreviewScreen({ shot }: { shot: DefaultSplitShot }) 
   }
 
   return <ExpensePreview shot={shot} />;
+}
+
+function GroupMenuPreview() {
+  const theme = useTheme();
+  return (
+    <View style={[styles.screen, { backgroundColor: theme.colors.background }]}>
+      <Appbar.Header style={{ backgroundColor: theme.colors.background }}>
+        <Appbar.BackAction accessibilityLabel="Navigate back" />
+        <Appbar.Content title="Flat 4B" titleStyle={{ fontWeight: "bold" }} />
+        <Menu
+          visible
+          onDismiss={() => {}}
+          anchor={
+            <Appbar.Action
+              icon="dots-vertical"
+              accessibilityLabel="Group options"
+              testID="group-menu-button"
+            />
+          }
+          contentStyle={{ minWidth: 200 }}
+        >
+          <Menu.Item title="History" leadingIcon="history" testID="group-menu-history" />
+          <Menu.Item title="Share summary" leadingIcon="share-variant" testID="group-menu-share-summary" />
+          <Menu.Item title="People" leadingIcon="account-group" testID="group-menu-people" />
+          <Menu.Item title="Spending & stats" leadingIcon="chart-pie" testID="group-menu-spending" />
+          <Menu.Item title="Rates" leadingIcon="percent" testID="group-menu-rates" />
+          <Menu.Item title="Edit group details" leadingIcon="pencil" testID="group-menu-edit-details" />
+          <Menu.Item title="Default split" leadingIcon="scale-balance" testID="group-menu-default-split" />
+          <Menu.Item title="Settlement currency" leadingIcon="cash-sync" testID="group-menu-settlement-currency" />
+          <Menu.Item title="Import from Splitwise" leadingIcon="file-import-outline" testID="group-menu-import-splitwise" />
+          <Menu.Item title="Archive" leadingIcon="archive-outline" testID="group-menu-archive" />
+          <Menu.Item
+            title="Leave group"
+            leadingIcon="exit-run"
+            titleStyle={{ color: theme.colors.error }}
+            testID="group-menu-leave"
+          />
+        </Menu>
+      </Appbar.Header>
+    </View>
+  );
 }
 
 function ExpensePreview({ shot }: { shot: DefaultSplitShot }) {

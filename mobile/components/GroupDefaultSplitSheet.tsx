@@ -105,8 +105,8 @@ export const GroupDefaultSplitSheet: React.FC<GroupDefaultSplitSheetProps> = ({
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
           <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
             {groupName
-              ? `New expenses in ${groupName} start with this split. You can still change the split on an expense. Past expenses stay as they were.`
-              : "New expenses start with this split. You can still change the split on an expense. Past expenses stay as they were."}
+              ? `New expenses in ${groupName} start with this split. Past expenses stay as they were.`
+              : "New expenses start with this split. Past expenses stay as they were."}
           </Text>
 
           <ModeCard
@@ -118,7 +118,7 @@ export const GroupDefaultSplitSheet: React.FC<GroupDefaultSplitSheetProps> = ({
             onPress={() => setDraftMode("equal")}
           />
           <ModeCard
-            title="Weights"
+            title="Shares"
             description="Set a share for each person. A couple can count as 2."
             selected={draftMode === "weights"}
             disabled={saving}
@@ -133,7 +133,7 @@ export const GroupDefaultSplitSheet: React.FC<GroupDefaultSplitSheetProps> = ({
             >
               {participants.length === 0 ? (
                 <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-                  Add people to this group before setting weights.
+                  Add people to this group before setting shares.
                 </Text>
               ) : (
                 participants.map((participant) => {

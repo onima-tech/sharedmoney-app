@@ -5,7 +5,8 @@ export type DefaultSplitShot =
   | "settings-weights"
   | "expense-prefill"
   | "expense-changed"
-  | "expense-unchanged";
+  | "expense-unchanged"
+  | "menu";
 
 const SHOTS: readonly DefaultSplitShot[] = [
   "settings-equal",
@@ -13,6 +14,7 @@ const SHOTS: readonly DefaultSplitShot[] = [
   "expense-prefill",
   "expense-changed",
   "expense-unchanged",
+  "menu",
 ];
 
 function isShot(value: string): value is DefaultSplitShot {

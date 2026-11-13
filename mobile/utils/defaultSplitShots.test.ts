@@ -7,6 +7,7 @@ Deno.test("default split preview reads its shot names", () => {
   assertEquals(readDefaultSplitShot("?shot=expense-prefill"), "expense-prefill");
   assertEquals(readDefaultSplitShot("?shot=expense-changed"), "expense-changed");
   assertEquals(readDefaultSplitShot("?shot=expense-unchanged"), "expense-unchanged");
+  assertEquals(readDefaultSplitShot("?shot=menu"), "menu");
   assertEquals(readDefaultSplitShot("?shot=search"), "settings-equal");
   assertEquals(readDefaultSplitShot(null), "settings-equal");
 });
