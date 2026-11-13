@@ -50,4 +50,8 @@ Deno.test("settleRemindLabel matches channel and first name", () => {
   assertEquals(settleRemindLabel("whatsapp", "Maya"), "Remind on WhatsApp");
   assertEquals(settleRemindLabel("share", "Maya Kapoor"), "Remind Maya");
   assertEquals(settleRemindLabel("share"), "Remind");
+  assertEquals(
+    settleRemindLabel("share", "Christopher F.", { asWritten: true }),
+    "Remind Christopher F.",
+  );
 });

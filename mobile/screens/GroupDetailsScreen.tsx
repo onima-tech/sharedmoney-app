@@ -122,6 +122,7 @@ import {
   settleModalPersonName,
   settleSharePersonName,
 } from "../utils/settleShareMessage";
+import { disambiguatedShortNames } from "../utils/disambiguatedShortNames";
 import {
   resolveSettlementPresence,
   settleRemindAudienceFromPresence,
@@ -1467,16 +1468,23 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   const getRemindPresentation = useCallback((balance: Balance) => {
     const channel = resolveRemindChannelForBalance(balance);
     const person = participantForBalance(balance);
-    const firstName = settleSharePersonName({
-      full_name: person?.full_name ?? balance.full_name,
-      email: person?.email ?? balance.email,
-      phone: person?.phone,
-    });
+    const labels = disambiguatedShortNames(
+      participants.filter((member) => member.id),
+      session?.user?.id,
+    );
+    const mapped = person?.id ? labels.get(person.id) : undefined;
+    const firstName = mapped && mapped !== "You"
+      ? mapped
+      : settleSharePersonName({
+        full_name: person?.full_name ?? balance.full_name,
+        email: person?.email ?? balance.email,
+        phone: person?.phone,
+      });
     return {
-      label: settleRemindLabel(channel, firstName),
+      label: settleRemindLabel(channel, firstName, { asWritten: true }),
       shareAnotherWay: channel === "whatsapp",
     };
-  }, [participantForBalance, resolveRemindChannelForBalance]);
+  }, [participantForBalance, participants, resolveRemindChannelForBalance, session?.user?.id]);
 
   const handleShareSummaryChange = useCallback((payload: GroupShareSummaryPayload | null) => {
     setShareSummary(payload);

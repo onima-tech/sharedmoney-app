@@ -262,6 +262,10 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
           return viewerLabel;
         }
       }
+      if (!isViewer(person)) {
+        const short = settlementCounterpartyShortName(person, participants, currentUserId);
+        if (short && short !== "You") return short;
+      }
       return settleSharePersonName(person);
     };
 
@@ -280,6 +284,7 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
     dashboardLoading,
     debts,
     hasMultipleCurrencies,
+    participants,
     unifyEnabled,
     viewerShareName,
   ]);
@@ -317,7 +322,7 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
 
     return settlementRows.map((balance, index) => {
       const isOwed = balance.amount > 0;
-      const name = settlementCounterpartyShortName(balance, participants);
+      const name = settlementCounterpartyShortName(balance, participants, currentUserId);
       const presence = presenceForBalance(balance, participants);
       const presenceCaption = settlementPresenceCaption(presence);
       const isFormer = presence === "former";

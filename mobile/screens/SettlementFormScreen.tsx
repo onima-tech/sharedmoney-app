@@ -52,6 +52,10 @@ import {
   YES_RECORD_IT_LABEL,
 } from "../utils/settleCopy";
 import {
+  disambiguatedShortNames,
+  type ShortNameParticipant,
+} from "../utils/disambiguatedShortNames";
+import {
   formatShareAmountInput,
   formatShareCurrency,
   parseShareAmountInput,
@@ -187,21 +191,13 @@ function participantLabelBase(
 
 function formatParticipantLabel(
   item: { id: string; user_id?: string | null; full_name?: string | null; email?: string | null },
-  all: Array<{ id: string; user_id?: string | null; full_name?: string | null; email?: string | null }>,
-  currentUserId?: string
+  labels: Map<string, string>,
+  currentUserId?: string,
 ): string {
-  // Never surface a raw email in this modal — name as entered, else local-part.
-  const labelBase = participantLabelBase(item);
-  const duplicates = all.filter(
-    (other) =>
-      participantLabelBase(other).toLowerCase() === labelBase.toLowerCase(),
-  );
-  // Disambiguate with id fragment — never append the full email.
-  const base = duplicates.length > 1
-    ? `${labelBase} · ${item.id.substring(0, 8)}`
-    : labelBase;
-  const isCurrent = !!(currentUserId && item.user_id === currentUserId);
-  return isCurrent ? `${base} (You)` : base;
+  if (currentUserId && item.user_id === currentUserId) return "You";
+  const label = labels.get(item.id);
+  if (label && label !== "You") return label;
+  return participantLabelBase(item);
 }
 
 export const SettlementFormScreen: React.FC<SettlementFormScreenProps> = ({
@@ -690,47 +686,58 @@ export const SettlementFormScreen: React.FC<SettlementFormScreenProps> = ({
     return groupMembers.filter((m) => m.user_id !== currentUserId);
   }, [groupMembers, currentUserId]);
 
-  const editableParticipants = useMemo(() => {
-    const list: Array<{ id: string; user_id?: string | null; full_name?: string | null; email?: string | null }> = [];
-    const seen = new Set<string>();
-
+  const shortNameRoster = useMemo(() => {
+    const byId = new Map<string, ShortNameParticipant>();
+    const put = (person: ShortNameParticipant) => {
+      if (!person.id) return;
+      const current = byId.get(person.id);
+      if (!current) {
+        byId.set(person.id, person);
+        return;
+      }
+      const currentName = current.full_name?.trim() ?? "";
+      const nextName = person.full_name?.trim() ?? "";
+      const currentEmail = current.email?.includes("@") ? current.email : null;
+      byId.set(person.id, {
+        id: person.id,
+        user_id: current.user_id || person.user_id,
+        full_name: currentName && currentName.toLowerCase() !== "you"
+          ? current.full_name
+          : (nextName || current.full_name),
+        email: currentEmail ?? person.email ?? current.email,
+      });
+    };
+    for (const person of participants) {
+      put({
+        id: person.id,
+        user_id: person.user_id,
+        full_name: person.full_name,
+        email: person.email,
+      });
+    }
     for (const member of groupMembers) {
-      if (!member.participant_id || seen.has(member.participant_id)) continue;
-      seen.add(member.participant_id);
-      list.push({
+      if (!member.participant_id) continue;
+      put({
         id: member.participant_id,
         user_id: member.user_id,
         full_name: member.full_name,
         email: member.email,
       });
     }
+    return [...byId.values()];
+  }, [groupMembers, participants]);
 
-    for (const participant of participants) {
-      if (!participant.id || seen.has(participant.id)) continue;
-      seen.add(participant.id);
-      list.push({
-        id: participant.id,
-        user_id: participant.user_id,
-        full_name: participant.full_name,
-        email: participant.email,
-      });
-    }
+  const shortNames = useMemo(
+    () => disambiguatedShortNames(shortNameRoster, currentUserId),
+    [shortNameRoster, currentUserId],
+  );
 
-    return list.map((item) => ({
+  const editableParticipants = useMemo(() => {
+    return shortNameRoster.map((item) => ({
       ...item,
-      label: formatParticipantLabel(item, list, currentUserId),
+      label: formatParticipantLabel(item, shortNames, currentUserId),
     }));
-  }, [groupMembers, participants, currentUserId]);
-
-  const allMembersList = useMemo(() => {
-    return groupMembers.map((member) => ({
-      id: member.participant_id || member.user_id || "",
-      user_id: member.user_id,
-      full_name: member.full_name,
-      email: member.email,
-      participant_id: member.participant_id,
-    }));
-  }, [groupMembers]);
+  }, [currentUserId, shortNameRoster, shortNames]);
 
   const availableUserList = useMemo(() => {
     return availableUsers.map((member) => ({
@@ -743,7 +750,14 @@ export const SettlementFormScreen: React.FC<SettlementFormScreenProps> = ({
   }, [availableUsers]);
 
   const formatAvailableUserLabel = (member: { id: string; user_id?: string | null; full_name?: string | null; email?: string | null }) => {
-    return formatParticipantLabel(member, allMembersList);
+    return formatParticipantLabel(member, shortNames, currentUserId);
+  };
+
+  const shortLabel = (id: string | null | undefined, fallback: string): string => {
+    if (!id) return fallback;
+    const label = shortNames.get(id);
+    if (label && label !== "You") return label;
+    return fallback;
   };
 
   // Initialize form when modal becomes visible
@@ -988,16 +1002,14 @@ export const SettlementFormScreen: React.FC<SettlementFormScreenProps> = ({
   };
 
   const getParticipantDisplayName = (participantId: string): string => {
-    // Prefer participants list, else groupMembers — full name as entered / email local-part
     const participant = participants.find((p: Participant) => p.id === participantId);
-    if (participant) {
-      return settleModalPersonName(participant);
-    }
     const member = groupMembers.find((m) => m.participant_id === participantId);
-    if (member) {
-      return settleModalPersonName(member);
-    }
-    return `Member ${participantId.substring(0, 8)}`;
+    const fallback = participant
+      ? settleModalPersonName(participant)
+      : member
+        ? settleModalPersonName(member)
+        : `Member ${participantId.substring(0, 8)}`;
+    return shortLabel(participantId, fallback);
   };
 
   const reformatAmountOnBlur = () => {
@@ -1122,11 +1134,11 @@ export const SettlementFormScreen: React.FC<SettlementFormScreenProps> = ({
                         ? settleModalYouLabel("to")
                         : getParticipantDisplayName(headerToId);
                   } else if (isAdminMode) {
-                    fromName = adminPayer
-                      ? settleModalPersonName(adminPayer)
+                    fromName = adminPayer?.participant_id
+                      ? shortLabel(adminPayer.participant_id, settleModalPersonName(adminPayer))
                       : "Payer";
-                    toName = adminReceiver
-                      ? settleModalPersonName(adminReceiver)
+                    toName = adminReceiver?.participant_id
+                      ? shortLabel(adminReceiver.participant_id, settleModalPersonName(adminReceiver))
                       : "Receiver";
                     if (adminPayer?.user_id === currentUserId) {
                       fromName = settleModalYouLabel("from");
@@ -1135,10 +1147,13 @@ export const SettlementFormScreen: React.FC<SettlementFormScreenProps> = ({
                       toName = settleModalYouLabel("to");
                     }
                   } else if (balance) {
-                    // Prefer participants list (typed name for people without accounts).
-                    const counterparty = settlementCounterpartyDisplayName(
-                      balance,
-                      participants,
+                    const typedName = settlementCounterpartyDisplayName(balance, participants);
+                    const counterpartyId = balance.participant_id
+                      || participants.find((person) => person.user_id && person.user_id === balance.user_id)?.id
+                      || groupMembers.find((member) => member.user_id === balance.user_id)?.participant_id;
+                    const counterparty = shortLabel(
+                      counterpartyId,
+                      typedName.split(/\s+/)[0] || typedName,
                     );
                     if (isPaying) {
                       fromName = settleModalYouLabel("from");
@@ -1151,7 +1166,9 @@ export const SettlementFormScreen: React.FC<SettlementFormScreenProps> = ({
                      // Manual entry
                      fromName = settleModalYouLabel("from");
                      const member = availableUsers.find(u => u.participant_id === selectedToParticipantId);
-                     toName = member ? settleModalPersonName(member) : "Member";
+                     toName = member?.participant_id
+                       ? shortLabel(member.participant_id, settleModalPersonName(member))
+                       : "Member";
                   } else {
                     return (
                       <Text variant="titleMedium" style={{ color: theme.colors.onSurfaceVariant }}>

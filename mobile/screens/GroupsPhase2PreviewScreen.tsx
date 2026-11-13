@@ -1,6 +1,7 @@
-import React from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import React, { useEffect } from "react";
+import { Platform, ScrollView, StyleSheet, View } from "react-native";
 import { Appbar, FAB, Text, useTheme } from "react-native-paper";
+import { useThemePreference } from "../contexts/ThemePreferenceContext";
 import { BottomNavBar } from "../components/BottomNavBar";
 import { GroupDashboard } from "../components/GroupDashboard";
 import { LedgerDateLabel, LedgerRow } from "../components/TransactionsSection";
@@ -93,6 +94,18 @@ const payment: Settlement = {
   created_at: "2026-11-11T18:00:00.000Z",
 };
 
+const christopherParticipants: Participant[] = [
+  { id: "p-me", group_id: "g", user_id: VIEWER, type: "member", full_name: "Asha Rao" },
+  { id: "p-cf", group_id: "g", user_id: "cf", type: "member", full_name: "Christopher Fernandez" },
+  { id: "p-cm", group_id: "g", user_id: "cm", type: "member", full_name: "Christopher Mills" },
+];
+
+const christopherBalances: Balance[] = [
+  { user_id: VIEWER, participant_id: "p-me", full_name: "Asha Rao", amount: 2400, currency: "INR" },
+  { user_id: "cf", participant_id: "p-cf", full_name: "Christopher Fernandez", amount: -1600, currency: "INR" },
+  { user_id: "cm", participant_id: "p-cm", full_name: "Christopher Mills", amount: -800, currency: "INR" },
+];
+
 const owedBalances: Balance[] = [
   { user_id: VIEWER, participant_id: "p-me", full_name: "You", amount: 2400, currency: "INR" },
   { user_id: "rahul", participant_id: "p-rahul", full_name: "Rahul", amount: -1600, currency: "INR" },
@@ -141,6 +154,13 @@ function detailFor(shot: GroupsPhase2Shot) {
  */
 export function GroupsPhase2PreviewScreen({ shot }: { shot: GroupsPhase2Shot }) {
   const theme = useTheme();
+  const { setThemePreference } = useThemePreference();
+  useEffect(() => {
+    if (Platform.OS !== "web" || typeof window === "undefined") return;
+    const match = /[?&#]theme=(light|dark)/i.exec(window.location.href);
+    if (!match) return;
+    void setThemePreference(match[1].toLowerCase() === "dark" ? "dark" : "light");
+  }, [setThemePreference]);
   const detail = detailFor(shot);
   if (detail && phase2ShotIsDetail(shot)) {
     return (
@@ -159,8 +179,11 @@ export function GroupsPhase2PreviewScreen({ shot }: { shot: GroupsPhase2Shot }) 
   const even = shot === "even";
   const loading = shot === "placeholder" || shot === "loading";
   const compact = shot === "compact";
-  const settle = shot === "settle";
-  const balances = shot === "unify"
+  const christophers = shot === "christophers";
+  const settle = shot === "settle" || christophers;
+  const balances = christophers
+    ? christopherBalances
+    : shot === "unify"
     ? mixedBalances
     : even
       ? [
@@ -169,8 +192,8 @@ export function GroupsPhase2PreviewScreen({ shot }: { shot: GroupsPhase2Shot }) 
       ]
       : owedBalances;
   const ledger = buildTransactionsLedger(
-    even ? [] : [dinner, scooter, coffee, taxi, beach],
-    even ? [] : [payment],
+    even || christophers ? [] : [dinner, scooter, coffee, taxi, beach],
+    even || christophers ? [] : [payment],
     "all",
   );
   const sections = groupByLedgerDateSection(
@@ -218,7 +241,7 @@ export function GroupsPhase2PreviewScreen({ shot }: { shot: GroupsPhase2Shot }) 
             settleListOpen={settle}
             activeMemberCount={3}
             membersKnown
-            participants={participants}
+            participants={christophers ? christopherParticipants : participants}
             defaultCurrency="INR"
             hasNonZeroBalance={!even && !loading}
           />

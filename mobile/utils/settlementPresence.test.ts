@@ -95,6 +95,29 @@ Deno.test("settlementCounterpartyDisplayName prefers participant typed name over
   );
 });
 
+Deno.test("settlementCounterpartyShortName adds a last initial when first names collide", () => {
+  const participants = [
+    { id: "p1", user_id: "u1", type: "member", full_name: "Christopher Fernandez" },
+    { id: "p2", user_id: "u2", type: "member", full_name: "Christopher Mills" },
+    { id: "p3", user_id: "me", type: "member", full_name: "Maya Kapoor" },
+  ];
+  assertEquals(
+    settlementCounterpartyShortName(
+      { participant_id: "p1", full_name: "Christopher Fernandez" },
+      participants,
+    ),
+    "Christopher F.",
+  );
+  assertEquals(
+    settlementCounterpartyShortName({ participant_id: "p2" }, participants),
+    "Christopher M.",
+  );
+  assertEquals(
+    settlementCounterpartyShortName({ participant_id: "p3", full_name: "Maya Kapoor" }, participants),
+    "Maya",
+  );
+});
+
 Deno.test("findParticipantForBalance matches participant_id before user_id", () => {
   const participants = [
     { id: "p1", user_id: "u1", full_name: "A" },

@@ -251,6 +251,27 @@ test("dashboard one settlement renders exactly one compact row", () => {
   assert.equal(settlementRows(tree).length, 1);
   assert.ok(byId(tree, "group-settlement-rows"));
 });
+test("dashboard disambiguates two members who share a first name", () => {
+  const tree = dashboard([
+    balance("me", 2400, "INR"),
+    { ...balance("cf", -1600, "INR"), full_name: "Christopher Fernandez" },
+    { ...balance("cm", -800, "INR"), full_name: "Christopher Mills" },
+  ], {
+    participants: [
+      { id: "me", user_id: "me", type: "member", full_name: "Asha Rao" },
+      { id: "cf", user_id: "cf", type: "member", full_name: "Christopher Fernandez" },
+      { id: "cm", user_id: "cm", type: "member", full_name: "Christopher Mills" },
+    ],
+    defaultCurrency: "INR",
+  });
+  const rows = settlementRows(tree);
+  assert.equal(rows.length, 2);
+  assert.match(text(rows[0]), /Christopher F\. owes you/);
+  assert.match(text(rows[1]), /Christopher M\. owes you/);
+  assert.match(text(byId(tree, "group-position-sentence")), /Christopher F\. owes ₹1,600 · Christopher M\. ₹800/);
+  assert.doesNotMatch(text(tree), /Christopher Fernandez|Christopher Mills/);
+});
+
 test("dashboard both directions render two compact rows", () => {
   const tree = dashboard([
     balance("me", 50), balance("Alice", -50),

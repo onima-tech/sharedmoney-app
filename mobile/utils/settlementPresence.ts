@@ -1,3 +1,4 @@
+import { disambiguatedShortNames } from "./disambiguatedShortNames";
 import { settleModalPersonName } from "./settleShareMessage";
 
 /**
@@ -108,11 +109,38 @@ export function settlementCounterpartyDisplayName(
   });
 }
 
-/** First-token label for settle rows (typed name → local-part → Someone). */
+/** First-name label for settle rows. Shared first names gain a last initial. */
 export function settlementCounterpartyShortName(
   balance: SettlementBalancePerson,
   participants?: SettlementPresencePerson[] | null,
+  currentUserId?: string | null,
 ): string {
+  const roster = (participants ?? [])
+    .filter((person): person is SettlementPresencePerson & { id: string } =>
+      typeof person.id === "string" && person.id.length > 0
+    )
+    .map((person) => ({
+      id: person.id,
+      user_id: person.user_id,
+      full_name: person.full_name,
+      email: person.email,
+    }));
+  const match = findParticipantForBalance(balance, participants);
+  if (match?.id) {
+    const index = roster.findIndex((person) => person.id === match.id);
+    if (index >= 0) {
+      const current = roster[index];
+      const full = current.full_name?.trim() ?? "";
+      const email = current.email?.trim() ?? "";
+      roster[index] = {
+        ...current,
+        full_name: full ? current.full_name : balance.full_name,
+        email: email.includes("@") ? current.email : (balance.email ?? current.email),
+      };
+    }
+    const label = disambiguatedShortNames(roster, currentUserId).get(match.id);
+    if (label) return label;
+  }
   const display = settlementCounterpartyDisplayName(balance, participants);
   return display.split(/\s+/)[0] || display;
 }

@@ -10,6 +10,7 @@ export type GroupsPhase2Shot =
   | "unify"
   | "cached"
   | "balances"
+  | "christophers"
   | "detail-equal"
   | "detail-unequal"
   | "detail-payment"
@@ -26,6 +27,7 @@ const SHOTS: readonly GroupsPhase2Shot[] = [
   "unify",
   "cached",
   "balances",
+  "christophers",
   "detail-equal",
   "detail-unequal",
   "detail-payment",

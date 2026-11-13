@@ -146,6 +146,7 @@ function labelFor(polarity: "owed" | "owe" | "even" | "mixed"): GroupPositionLab
 export function counterpartySentence(
   rows: Balance[],
   participants: Participant[] = [],
+  currentUserId?: string | null,
 ): string | null {
   const top = [...rows]
     .sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))
@@ -153,7 +154,7 @@ export function counterpartySentence(
   if (top.length === 0) return null;
   const firstOwed = top[0].amount > 0;
   const clauses = top.map((row, index) => {
-    const name = settlementCounterpartyShortName(row, participants);
+    const name = settlementCounterpartyShortName(row, participants, currentUserId);
     const amount = formatShareCurrency(Math.abs(row.amount), row.currency);
     const owed = row.amount > 0;
     if (index === 0 || owed !== firstOwed) {
@@ -195,7 +196,7 @@ export function resolveGroupPosition(input: {
     defaultCurrency: input.defaultCurrency,
     rateBook,
   });
-  const sentence = counterpartySentence(rows, input.participants);
+  const sentence = counterpartySentence(rows, input.participants, input.currentUserId);
   const showRemind = rows.some((row) => row.amount > 0.005);
 
   const material = input.balances.filter((balance) => Math.abs(balance.amount) >= MATERIAL);
