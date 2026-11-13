@@ -1,5 +1,5 @@
 import { Balance } from "../types";
-import { formatCurrency } from "./currency";
+import { formatShareCurrency } from "./settleShareMessage";
 
 /**
  * Build the Leave Group confirm body, optionally including the viewer's balance.
@@ -26,7 +26,7 @@ export function buildLeaveGroupConfirmMessage(
     .filter(([, amount]) => Math.abs(amount) >= 0.01)
     .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
     .map(([currency, amount]) => {
-      const formatted = formatCurrency(amount, currency);
+      const formatted = formatShareCurrency(amount, currency);
       return amount > 0 ? `+${formatted}` : formatted;
     });
 

@@ -75,6 +75,10 @@ const beach = expense(4, "Beach shack", 1200, "p-me", [
   { participant_id: "p-me", user_id: VIEWER, amount: 400 },
   { participant_id: "p-rahul", user_id: "rahul", amount: 800 },
 ], "THB");
+const coffee = expense(5, "Coffee", 125.5, "p-me", [
+  { participant_id: "p-me", user_id: VIEWER, amount: 62.75 },
+  { participant_id: "p-rahul", user_id: "rahul", amount: 62.75 },
+]);
 
 const payment: Settlement = {
   id: "pay-1",
@@ -165,7 +169,7 @@ export function GroupsPhase2PreviewScreen({ shot }: { shot: GroupsPhase2Shot }) 
       ]
       : owedBalances;
   const ledger = buildTransactionsLedger(
-    even ? [] : [dinner, scooter, taxi, beach],
+    even ? [] : [dinner, scooter, coffee, taxi, beach],
     even ? [] : [payment],
     "all",
   );

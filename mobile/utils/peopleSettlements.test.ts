@@ -191,7 +191,7 @@ Deno.test("personSettlementHeadline keeps a single foreign currency as-is", () =
 
   const headline = personSettlementHeadline(raj, "INR", book);
   assertEquals(headline.verb, "pay");
-  assertEquals(headline.headline, "$80.00");
+  assertEquals(headline.headline, "$80");
   assertEquals(headline.breakdown, "");
 });
 
@@ -209,7 +209,7 @@ Deno.test("personSettlementHeadline nets opposite group leftovers in one currenc
 
   const headline = personSettlementHeadline(maya, "INR", book);
   assertEquals(headline.verb, "pay");
-  assertEquals(headline.headline, "₹300.00");
+  assertEquals(headline.headline, "₹300");
 });
 
 Deno.test("settlementSummary counts people and group lines", () => {
@@ -265,7 +265,7 @@ Deno.test("personSettlePlan writes one settlement per group so both ledgers clos
   assertEquals(plan.recordable[0].notes, "Settled with Maya across 2 groups");
   assertEquals(
     personSettleActionLabel(maya, personSettlementHeadline(maya, "INR", book)),
-    "Pay ₹300.00 and close 2 groups",
+    "Pay ₹300 and close 2 groups",
   );
 });
 

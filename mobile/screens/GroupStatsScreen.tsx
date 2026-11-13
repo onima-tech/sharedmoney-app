@@ -20,10 +20,8 @@ import { useGroupDetails } from "../hooks/useGroups";
 import { useParticipants } from "../hooks/useParticipants";
 import { useCreateSettlement } from "../hooks/useSettlements";
 import { Balance, GroupMember, Participant, Transaction } from "../types";
-import {
-  formatCurrency,
-  getDefaultCurrency,
-} from "../utils/currency";
+import { getDefaultCurrency } from "../utils/currency";
+import { formatShareCurrency } from "../utils/settleShareMessage";
 import { formatBreakdown, formatDisplayTotals, simplifyUnifiedDebts, unifyPeopleNets, type ConvertedPart, type UnifiedPersonNet } from "../utils/currencyMerge";
 import { SettlementFormScreen } from "./SettlementFormScreen";
 
@@ -407,7 +405,7 @@ export const GroupStatsScreen: React.FC<GroupStatsScreenProps> = ({
                                               : theme.colors.onSecondaryContainer, 
                                             fontWeight: 'bold' 
                                         }}>
-                                            {bal.amount >= 0 ? "+" : ""}{formatCurrency(bal.amount, bal.currency)}
+                                            {bal.amount >= 0 ? "+" : ""}{formatShareCurrency(bal.amount, bal.currency)}
                                         </Text>
                                         {originalPartsOf(bal).length > 0 ? (
                                           <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>
@@ -418,7 +416,7 @@ export const GroupStatsScreen: React.FC<GroupStatsScreenProps> = ({
                                   ))
                               ) : (
                                   <Text variant="titleMedium" style={{ opacity: 0.3, fontWeight: 'bold' }}>
-                                      {formatCurrency(0, defaultCurrency)}
+                                      {formatShareCurrency(0, defaultCurrency)}
                                   </Text>
                               )}
   
@@ -508,7 +506,7 @@ export const GroupStatsScreen: React.FC<GroupStatsScreenProps> = ({
             disabled={!onEditTransaction}
             style={{ padding: 16 }}
             accessibilityRole="button"
-            accessibilityLabel={`${entry.transaction.description || "Untitled expense"}, ${formatCurrency(entry.transaction.amount, currency)}`}
+            accessibilityLabel={`${entry.transaction.description || "Untitled expense"}, ${formatShareCurrency(entry.transaction.amount, currency)}`}
           >
             <View>
               <View style={styles.entryHeader}>
@@ -522,7 +520,7 @@ export const GroupStatsScreen: React.FC<GroupStatsScreenProps> = ({
                 </View>
                 <View style={{ flexDirection: "row", alignItems: "center" }}>
                   <Text variant="titleMedium" style={{ fontWeight: "bold" }}>
-                    {formatCurrency(entry.transaction.amount, currency)}
+                    {formatShareCurrency(entry.transaction.amount, currency)}
                   </Text>
                   {onEditTransaction && (
                     <MaterialCommunityIcons
@@ -536,7 +534,7 @@ export const GroupStatsScreen: React.FC<GroupStatsScreenProps> = ({
               </View>
               {entry.shareAmount !== null && (
                 <Text style={[styles.entryNote, colorStyles.entryNote]}>
-                  You owe {formatCurrency(entry.shareAmount, currency)} for this
+                  You owe {formatShareCurrency(entry.shareAmount, currency)} for this
                   expense.
                 </Text>
               )}
@@ -544,7 +542,7 @@ export const GroupStatsScreen: React.FC<GroupStatsScreenProps> = ({
                 entry.netReceivable !== null &&
                 entry.netReceivable > 0 && (
                   <Text style={[styles.entryNote, colorStyles.entryNote]}>
-                    Others owe you {formatCurrency(entry.netReceivable, currency)}.
+                    Others owe you {formatShareCurrency(entry.netReceivable, currency)}.
                   </Text>
                 )}
             </View>
@@ -628,7 +626,7 @@ export const GroupStatsScreen: React.FC<GroupStatsScreenProps> = ({
 
                                 <View style={{ alignItems: 'flex-end', gap: 4 }}>
                                     <Text variant="titleMedium" style={{ color: amountColor, fontWeight: "700" }}>
-                                        {formatCurrency(edge.amount, edge.currency)}
+                                        {formatShareCurrency(edge.amount, edge.currency)}
                                     </Text>
                                     {originalPartsOfEdge(edge).length > 0 ? (
                                         <Text variant="labelSmall" style={{ color: theme.colors.onSurfaceVariant }}>

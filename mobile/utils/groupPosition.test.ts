@@ -52,6 +52,26 @@ Deno.test("position owed: label, viewer number, and the top two counterparties",
   assertEquals(result.compactLine, "You're owed ₹2,400");
 });
 
+Deno.test("position number drops .00 on whole amounts and keeps paise", () => {
+  const whole = position([
+    balance("me", 30000),
+    balance("Rahul", -30000),
+  ]);
+  assertEquals(whole.kind, "ready");
+  if (whole.kind !== "ready") return;
+  assertEquals(whole.numberText, "₹30,000");
+  assertEquals(whole.sentence, "Rahul owes ₹30,000 ›");
+
+  const paise = position([
+    balance("me", 5625.5),
+    balance("Rahul", -5625.5),
+  ]);
+  assertEquals(paise.kind, "ready");
+  if (paise.kind !== "ready") return;
+  assertEquals(paise.numberText, "₹5,625.50");
+  assertEquals(paise.sentence, "Rahul owes ₹5,625.50 ›");
+});
+
 Deno.test("position owe: one counterparty", () => {
   const result = position([
     balance("me", -1050),
