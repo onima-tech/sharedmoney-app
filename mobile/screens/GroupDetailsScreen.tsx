@@ -39,6 +39,7 @@ import { GroupDefaultSplitSheet } from "../components/GroupDefaultSplitSheet";
 import { SettlementCurrencySheet } from "../components/SettlementCurrencySheet";
 import { InvitationsList } from "../components/InvitationsList";
 import { MembersList } from "../components/MembersList";
+import { memberRowShowsMenu } from "../utils/peoplePicker";
 import { SafetyAction, SafetyActionModal } from "../components/SafetyActionModal";
 import {
   LedgerDateLabel,
@@ -2220,6 +2221,13 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
               invitations={invitations.filter((i) => i.status === "pending")}
               loading={invitationsLoading}
               canManageInvites={canManageInvites}
+              reserveMenuColumn={participants.some((person) =>
+                memberRowShowsMenu(person, {
+                  canManageMembers,
+                  currentUserId: session?.user?.id,
+                  canBlock: true,
+                }),
+              )}
               cancellingInvitationId={cancellingInvitationId}
               onCancel={handleCancelInvitation}
             />

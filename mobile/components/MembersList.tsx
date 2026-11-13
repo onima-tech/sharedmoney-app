@@ -12,7 +12,7 @@ import {
 } from "react-native-paper";
 import { Participant } from "../types";
 import { formatDate } from "../utils/date";
-import { canRemovePerson } from "../utils/peoplePicker";
+import { canRemovePerson, memberRowShowsMenu } from "../utils/peoplePicker";
 import { styles } from "./MembersList.styles";
 
 interface MembersListProps {
@@ -49,6 +49,54 @@ export const MembersList: React.FC<MembersListProps> = ({
     });
   }, [people]);
 
+  const rows = React.useMemo(() => {
+    return sortedPeople.map((person) => {
+      const personName =
+        person.full_name ||
+        person.email ||
+        `Person ${person.id.substring(0, 8)}`;
+      const isCurrentUser = person.user_id === currentUserId;
+      const isActive = person.type !== "former";
+      const canRemove = canRemovePerson(person, {
+        canManageMembers,
+        currentUserId,
+      });
+      const isRemoving = removingMemberId === person.id;
+      const isWorking = workingParticipantId === person.id || isRemoving;
+      const canInviteOrConnect = canManageMembers && !person.user_id && !!person.email && isActive;
+      const canBlock = !!onBlock && !!person.user_id && !isCurrentUser;
+      const hasMenuActions = memberRowShowsMenu(person, {
+        canManageMembers,
+        currentUserId,
+        canBlock: !!onBlock,
+      });
+      const dateLabel = person.joined_at || person.created_at;
+      return {
+        person,
+        personName,
+        isCurrentUser,
+        isActive,
+        canRemove,
+        isRemoving,
+        isWorking,
+        hasMenuActions,
+        canInviteOrConnect,
+        canBlock,
+        detail: person.email || (dateLabel ? `Joined ${formatDate(dateLabel)}` : ""),
+      };
+    });
+  }, [
+    sortedPeople,
+    canManageMembers,
+    currentUserId,
+    removingMemberId,
+    workingParticipantId,
+    onBlock,
+  ]);
+
+  const reserveRemove = rows.some((row) => row.canRemove || row.isRemoving);
+  const reserveMenu = rows.some((row) => row.hasMenuActions || (row.isWorking && !row.isRemoving));
+
   if (people.length === 0) {
     return (
       <Text
@@ -78,24 +126,20 @@ export const MembersList: React.FC<MembersListProps> = ({
       elevation={0}
       style={{ backgroundColor: theme.colors.surface, borderRadius: 12 }}
     >
-      {sortedPeople.map((person, index) => {
-        const personName =
-          person.full_name ||
-          person.email ||
-          `Person ${person.id.substring(0, 8)}`;
-        const isCurrentUser = person.user_id === currentUserId;
-        const isActive = person.type !== "former";
-        const canRemove = canRemovePerson(person, {
-          canManageMembers,
-          currentUserId,
-        });
-        const isRemoving = removingMemberId === person.id;
-        const isWorking = workingParticipantId === person.id || isRemoving;
-        const canInviteOrConnect = canManageMembers && !person.user_id && !!person.email && isActive;
-        const canBlock = !!onBlock && !!person.user_id && !isCurrentUser;
-        const hasMenuActions = canInviteOrConnect || canBlock;
-        const dateLabel = person.joined_at || person.created_at;
-        const detail = person.email || (dateLabel ? `Joined ${formatDate(dateLabel)}` : "");
+      {rows.map((row, index) => {
+        const {
+          person,
+          personName,
+          isCurrentUser,
+          isActive,
+          canRemove,
+          isRemoving,
+          isWorking,
+          hasMenuActions,
+          canInviteOrConnect,
+          canBlock,
+          detail,
+        } = row;
 
         return (
           <React.Fragment key={person.id}>
@@ -110,16 +154,17 @@ export const MembersList: React.FC<MembersListProps> = ({
                 size={40}
                 label={getInitials(personName)}
                 style={{
-	                  backgroundColor: isActive
-	                    ? theme.colors.primaryContainer
-	                    : theme.colors.surfaceVariant,
+                  backgroundColor: isActive
+                    ? theme.colors.primaryContainer
+                    : theme.colors.surfaceVariant,
                   marginRight: 16,
                   opacity: isWorking ? 0.6 : 1,
+                  flexShrink: 0,
                 }}
                 color={
-	                  isActive
-	                    ? theme.colors.onPrimaryContainer
-	                    : theme.colors.onSurfaceVariant
+                  isActive
+                    ? theme.colors.onPrimaryContainer
+                    : theme.colors.onSurfaceVariant
                 }
               />
               <View style={styles.memberLeft}>
@@ -149,15 +194,14 @@ export const MembersList: React.FC<MembersListProps> = ({
                 ) : null}
               </View>
               <View style={styles.memberRight}>
-                {isRemoving ? (
-                  <ActivityIndicator
-                    size="small"
-                    color={theme.colors.primary}
-                    style={styles.removingIndicator}
-                  />
-                ) : (
-                  <>
-                    {canRemove && (
+                {reserveRemove ? (
+                  <View style={styles.actionSlot}>
+                    {isRemoving ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={theme.colors.primary}
+                      />
+                    ) : canRemove ? (
                       <IconButton
                         icon="delete-outline"
                         size={24}
@@ -166,29 +210,26 @@ export const MembersList: React.FC<MembersListProps> = ({
                         style={styles.removeMemberButton}
                         disabled={removingMemberId !== null}
                       />
-                    )}
-                    {hasMenuActions ? (
-                      isWorking ? (
-                        <ActivityIndicator
-                          size="small"
-                          color={theme.colors.primary}
-                          style={styles.removingIndicator}
-                        />
-                      ) : (
-                        <Menu
-                          visible={menuParticipantId === person.id}
-                          onDismiss={() => setMenuParticipantId(null)}
-                          anchor={
-                            <IconButton
-                              icon="dots-vertical"
-                              size={24}
-                              accessibilityLabel={`Actions for ${personName}`}
-                              onPress={() => setMenuParticipantId(person.id)}
-                              style={styles.removeMemberButton}
-                              disabled={!!workingParticipantId}
-                            />
-                          }
-                        >
+                    ) : null}
+                  </View>
+                ) : null}
+                {reserveMenu ? (
+                  <View style={styles.actionSlot}>
+                    {hasMenuActions && !isWorking ? (
+                      <Menu
+                        visible={menuParticipantId === person.id}
+                        onDismiss={() => setMenuParticipantId(null)}
+                        anchor={
+                          <IconButton
+                            icon="dots-vertical"
+                            size={24}
+                            accessibilityLabel={`Actions for ${personName}`}
+                            onPress={() => setMenuParticipantId(person.id)}
+                            style={styles.removeMemberButton}
+                            disabled={!!workingParticipantId}
+                          />
+                        }
+                      >
                           {canInviteOrConnect ? (
                             <>
                               <Menu.Item
@@ -220,13 +261,17 @@ export const MembersList: React.FC<MembersListProps> = ({
                             />
                           ) : null}
                         </Menu>
-                      )
+                    ) : isWorking && !isRemoving ? (
+                      <ActivityIndicator
+                        size="small"
+                        color={theme.colors.primary}
+                      />
                     ) : null}
-                  </>
-                )}
+                  </View>
+                ) : null}
               </View>
             </View>
-            {index < sortedPeople.length - 1 && <Divider />}
+            {index < rows.length - 1 && <Divider />}
           </React.Fragment>
         );
       })}

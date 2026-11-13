@@ -17,6 +17,8 @@ interface InvitationsListProps {
   invitations: GroupInvitation[];
   loading: boolean;
   canManageInvites: boolean;
+  /** Keep cancel in the remove column when member rows also show an overflow menu. */
+  reserveMenuColumn?: boolean;
   cancellingInvitationId: string | null;
   onCancel: (invitationId: string) => void;
 }
@@ -25,6 +27,7 @@ export const InvitationsList: React.FC<InvitationsListProps> = ({
   invitations,
   loading,
   canManageInvites,
+  reserveMenuColumn = false,
   cancellingInvitationId,
   onCancel,
 }) => {
@@ -40,10 +43,14 @@ export const InvitationsList: React.FC<InvitationsListProps> = ({
     );
   }
 
-  const getInitials = (invitation: GroupInvitation) => {
-    if (invitation.email) return invitation.email.substring(0, 2).toUpperCase();
-    if (invitation.phone) return "☎";
-    return "🔗";
+  const markFor = (invitation: GroupInvitation):
+    | { kind: "initials"; label: string }
+    | { kind: "icon"; icon: "phone" | "link-variant" } => {
+    if (invitation.email) {
+      return { kind: "initials", label: invitation.email.substring(0, 2).toUpperCase() };
+    }
+    if (invitation.phone) return { kind: "icon", icon: "phone" };
+    return { kind: "icon", icon: "link-variant" };
   };
 
   return (
@@ -55,6 +62,18 @@ export const InvitationsList: React.FC<InvitationsListProps> = ({
         const isCancelling = cancellingInvitationId === invitation.id;
         const expiresDate = new Date(invitation.expires_at);
         const isExpired = expiresDate < new Date();
+        const mark = markFor(invitation);
+        const identified = !!(invitation.email || invitation.phone);
+        const avatarStyle = {
+          backgroundColor: identified
+            ? theme.colors.surfaceVariant
+            : theme.colors.primaryContainer,
+          marginRight: 16,
+          flexShrink: 0,
+        };
+        const foreground = identified
+          ? theme.colors.onSurfaceVariant
+          : theme.colors.onPrimaryContainer;
 
         return (
           <React.Fragment key={invitation.id}>
@@ -66,22 +85,21 @@ export const InvitationsList: React.FC<InvitationsListProps> = ({
                 { paddingHorizontal: 16, paddingVertical: 12 }
               ]}
             >
-              <Avatar.Text 
-                size={40} 
-                label={getInitials(invitation)}
-                style={{ 
-	                  backgroundColor: invitation.email || invitation.phone
-	                    ? theme.colors.surfaceVariant
-	                    : theme.colors.primaryContainer,
-                  marginRight: 16,
-                  opacity: 0.7
-                }}
-                color={
-	                  invitation.email || invitation.phone
-	                    ? theme.colors.onSurfaceVariant
-	                    : theme.colors.onPrimaryContainer
-                }
-              />
+              {mark.kind === "initials" ? (
+                <Avatar.Text
+                  size={40}
+                  label={mark.label}
+                  style={avatarStyle}
+                  color={foreground}
+                />
+              ) : (
+                <Avatar.Icon
+                  size={40}
+                  icon={mark.icon}
+                  style={avatarStyle}
+                  color={foreground}
+                />
+              )}
               <View style={styles.memberLeft}>
                 <Text
                   variant="titleMedium"
@@ -115,12 +133,12 @@ export const InvitationsList: React.FC<InvitationsListProps> = ({
                 </Text>
               </View>
               <View style={styles.memberRight}>
-                {canManageInvites &&
-                  (isCancelling ? (
+                {canManageInvites ? (
+                  <View style={styles.actionSlot}>
+                    {isCancelling ? (
                       <ActivityIndicator
                         size="small"
                         color={theme.colors.primary}
-                        style={styles.removingIndicator}
                       />
                     ) : (
                       <IconButton
@@ -131,7 +149,10 @@ export const InvitationsList: React.FC<InvitationsListProps> = ({
                         style={styles.removeMemberButton}
                         disabled={cancellingInvitationId !== null}
                       />
-                  ))}
+                    )}
+                  </View>
+                ) : null}
+                {canManageInvites && reserveMenuColumn ? <View style={styles.actionSlot} /> : null}
               </View>
             </View>
             {index < invitations.length - 1 && <Divider />}

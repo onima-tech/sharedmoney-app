@@ -13,6 +13,26 @@ interface RemovablePerson {
   user_id?: string | null;
 }
 
+export function memberRowShowsMenu(
+  person: {
+    type: string;
+    user_id?: string | null;
+    email?: string | null;
+  },
+  options: {
+    canManageMembers: boolean;
+    currentUserId?: string;
+    canBlock: boolean;
+  },
+): boolean {
+  const isCurrentUser = person.user_id === options.currentUserId;
+  const isActive = person.type !== "former";
+  const canInviteOrConnect =
+    options.canManageMembers && !person.user_id && !!person.email && isActive;
+  const canBlock = options.canBlock && !!person.user_id && !isCurrentUser;
+  return canInviteOrConnect || canBlock;
+}
+
 /** An unlinked, non-invited person can be removed by a member who manages people. */
 export function canRemovePerson(
   person: RemovablePerson,
