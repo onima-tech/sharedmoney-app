@@ -9,7 +9,7 @@ import {
   useTheme,
 } from "react-native-paper";
 import { PersonSettlementView } from "../hooks/usePeopleSettlements";
-import { formatCurrency } from "../utils/currency";
+import { formatShareCurrency } from "../utils/settleShareMessage";
 import { formatBreakdown } from "../utils/currencyMerge";
 import {
   canRecordSettlementLine,
@@ -150,7 +150,7 @@ export const PeopleSettlementsList: React.FC<PeopleSettlementsListProps> = ({
                       </View>
                       <View style={styles.lineAmount}>
                         <Text variant="titleSmall" style={{ color: lineColor, fontWeight: "700" }}>
-                          {formatCurrency(line.amount, line.currency)}
+                          {formatShareCurrency(line.amount, line.currency)}
                         </Text>
                         <View style={[styles.chip, { backgroundColor: chipBg }]}>
                           <Text variant="labelSmall" style={{ color: chipFg, fontWeight: "700", letterSpacing: 0.4 }}>

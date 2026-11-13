@@ -10,7 +10,8 @@ import {
 } from "react-native-paper";
 import { Balance, GroupBalance, Participant } from "../types";
 import { balanceAmountColor, balancePolarityLabel } from "../utils/balanceRowLabels";
-import { formatCurrency, getDefaultCurrency } from "../utils/currency";
+import { getDefaultCurrency } from "../utils/currency";
+import { formatShareCurrency } from "../utils/settleShareMessage";
 import { formatBreakdown } from "../utils/currencyMerge";
 import { styles } from "./BalancesSection.styles";
 
@@ -78,8 +79,8 @@ export const BalancesSection: React.FC<BalancesSectionProps> = ({
     }
     // Inputs may already be unified upstream; otherwise keep currencies separate.
     const formatTotals = (totals: Map<string, number>) => totals.size > 0
-      ? Array.from(totals, ([currency, amount]) => formatCurrency(amount, currency)).join("\n")
-      : formatCurrency(0, defaultCurrency);
+      ? Array.from(totals, ([currency, amount]) => formatShareCurrency(amount, currency)).join("\n")
+      : formatShareCurrency(0, defaultCurrency);
     return { owedTotal: formatTotals(owed), oweTotal: formatTotals(owe) };
   }, [personRows, defaultCurrency]);
 
@@ -274,7 +275,7 @@ export const BalancesSection: React.FC<BalancesSectionProps> = ({
               <View
                 style={styles.balanceContent}
                 testID={`balance-row-${key}`}
-                accessibilityLabel={`${name}, ${formatCurrency(Math.abs(balance.amount), balance.currency)} ${polarity}`}
+                accessibilityLabel={`${name}, ${formatShareCurrency(Math.abs(balance.amount), balance.currency)} ${polarity}`}
               >
                 <Avatar.Text
                   size={36}
@@ -296,7 +297,7 @@ export const BalancesSection: React.FC<BalancesSectionProps> = ({
                     variant="titleSmall"
                     style={{ color: amountColor, fontWeight: "700" }}
                   >
-                    {formatCurrency(Math.abs(balance.amount), balance.currency)}
+                    {formatShareCurrency(Math.abs(balance.amount), balance.currency)}
                     <Text
                       variant="bodySmall"
                       style={{ color: amountColor, fontWeight: "500" }}

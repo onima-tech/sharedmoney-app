@@ -1,5 +1,6 @@
 import { Balance, Group, GroupBalance, GroupMember, Participant } from "../types";
 import { formatCurrency, getDefaultCurrency } from "./currency";
+import { formatShareCurrency } from "./settleShareMessage";
 import {
   formatBreakdown,
   formatUnifiedHeadline,
@@ -286,7 +287,7 @@ export function personSettlementHeadline(
   if (visible.length === 0) {
     return {
       verb: "settled",
-      headline: formatCurrency(0, preferredCurrency),
+      headline: formatShareCurrency(0, preferredCurrency),
       breakdown: "",
       leftover: "",
       unified: null,
@@ -297,7 +298,7 @@ export function personSettlementHeadline(
     const [currency, amount] = visible[0];
     return {
       verb: amount > 0.01 ? "receive" : amount < -0.01 ? "pay" : "settled",
-      headline: formatCurrency(Math.abs(amount), currency),
+      headline: formatShareCurrency(Math.abs(amount), currency),
       breakdown: "",
       leftover: "",
       unified: null,
