@@ -103,6 +103,7 @@ import {
   nativePdfExportAvailable,
 } from "../utils/groupExportDelivery";
 import { loadGroupExportSource } from "../utils/groupExportLoad";
+import { resolveSettlementPerson } from "../utils/groupExportNames";
 import {
   buildGroupExportPdfHtml,
   formatExportDate,
@@ -2028,14 +2029,16 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
               defaultCurrency: currency,
             }),
             settlements: source.settlements.map((settlement) => ({
-              from: participants.find((person) => (
-                person.id === settlement.from_participant_id
-                || person.user_id === settlement.from_user_id
-              )) ?? {},
-              to: participants.find((person) => (
-                person.id === settlement.to_participant_id
-                || person.user_id === settlement.to_user_id
-              )) ?? {},
+              from: resolveSettlementPerson(
+                participants,
+                settlement.from_participant_id,
+                settlement.from_user_id,
+              ),
+              to: resolveSettlementPerson(
+                participants,
+                settlement.to_participant_id,
+                settlement.to_user_id,
+              ),
               amount: settlement.amount,
               currency: settlement.currency,
             })),
