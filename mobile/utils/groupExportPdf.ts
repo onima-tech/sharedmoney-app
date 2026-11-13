@@ -12,10 +12,19 @@ export type GroupExportMemberTotal = {
   shareByCurrency: Record<string, number>;
 };
 
+export type GroupExportRecordedSettlement = {
+  from: { full_name?: string | null; email?: string | null };
+  to: { full_name?: string | null; email?: string | null };
+  amount: number;
+  currency: string;
+};
+
 export type GroupExportPdfInput = {
   groupName: string;
   exportedOn: string;
   memberTotals: GroupExportMemberTotal[];
+  /** Settlements already recorded. Omitted from the page when empty. */
+  settlements?: GroupExportRecordedSettlement[];
   balances: Balance[];
   currentUserId?: string;
   currentUserParticipantId?: string;
@@ -109,6 +118,36 @@ export function buildGroupExportPdfHtml(input: GroupExportPdfInput): string {
     currency: edge.currency,
   }));
 
+  const recorded = (input.settlements ?? []).filter((settlement) => (
+    Number.isFinite(settlement.amount) && Math.abs(settlement.amount) >= MATERIAL
+  ));
+  const settledByCurrency = new Map<string, GroupExportRecordedSettlement[]>();
+  for (const settlement of recorded) {
+    const currency = (settlement.currency || input.defaultCurrency).toUpperCase();
+    const list = settledByCurrency.get(currency) ?? [];
+    list.push(settlement);
+    settledByCurrency.set(currency, list);
+  }
+  const settledBlocks = Array.from(settledByCurrency.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([currency, rows]) => {
+      const lines = [...rows]
+        .sort((a, b) => {
+          const aLine = `${exportPersonName(a.from)} ${exportPersonName(a.to)}`;
+          const bLine = `${exportPersonName(b.from)} ${exportPersonName(b.to)}`;
+          return aLine.localeCompare(bLine);
+        })
+        .map((row) => {
+          const from = escapeHtml(exportPersonName(row.from));
+          const to = escapeHtml(exportPersonName(row.to));
+          const formatted = escapeHtml(money(row.amount, currency));
+          return `<li>${from} paid ${to} ${formatted}</li>`;
+        })
+        .join("");
+      return `<h3>${escapeHtml(currency)}</h3><ul>${lines}</ul>`;
+    })
+    .join("");
+
   const totalsRows = input.memberTotals.map((member) => {
     const currencies = currenciesOf(member.paidByCurrency, member.shareByCurrency);
     const lines = (currencies.length > 0 ? currencies : [input.defaultCurrency]).map((currency) => {
@@ -185,6 +224,7 @@ export function buildGroupExportPdfHtml(input: GroupExportPdfInput): string {
   ${totalsRows
     ? `<table>${totalsRows}</table>`
     : `<p class="quiet">No spending recorded.</p>`}
+  ${settledBlocks ? `<h2>Settled</h2>${settledBlocks}` : ""}
   <h2>Balances</h2>
   ${balanceBlocks || `<p class="quiet">No outstanding balances.</p>`}
   <h2>Settle up</h2>

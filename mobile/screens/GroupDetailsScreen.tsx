@@ -2027,6 +2027,18 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
               breakdown: source.stats?.member_breakdown ?? [],
               defaultCurrency: currency,
             }),
+            settlements: source.settlements.map((settlement) => ({
+              from: participants.find((person) => (
+                person.id === settlement.from_participant_id
+                || person.user_id === settlement.from_user_id
+              )) ?? {},
+              to: participants.find((person) => (
+                person.id === settlement.to_participant_id
+                || person.user_id === settlement.to_user_id
+              )) ?? {},
+              amount: settlement.amount,
+              currency: settlement.currency,
+            })),
             balances: source.balances,
             currentUserId: session?.user?.id,
             currentUserParticipantId: viewerParticipantId ?? undefined,
@@ -2816,7 +2828,6 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
 
       <GroupExportSheet
         visible={showExport}
-        groupName={group.name}
         pdfAvailable={pdfExportAvailable}
         busy={exportBusy}
         onDismiss={() => {

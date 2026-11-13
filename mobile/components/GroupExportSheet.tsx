@@ -6,7 +6,6 @@ type ExportKind = "csv" | "pdf";
 
 type GroupExportSheetProps = {
   visible: boolean;
-  groupName: string;
   pdfAvailable: boolean;
   busy: ExportKind | null;
   onDismiss: () => void;
@@ -15,14 +14,12 @@ type GroupExportSheetProps = {
 
 export function GroupExportSheet({
   visible,
-  groupName,
   pdfAvailable,
   busy,
   onDismiss,
   onExport,
 }: GroupExportSheetProps) {
   const theme = useTheme();
-  const name = groupName.trim() || "This group";
   return (
     <Portal>
       <Dialog
@@ -33,9 +30,6 @@ export function GroupExportSheet({
       >
         <Dialog.Title>Export</Dialog.Title>
         <Dialog.Content>
-          <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-            {name}
-          </Text>
           <ExportChoice
             icon="file-delimited-outline"
             title="CSV"
@@ -47,7 +41,7 @@ export function GroupExportSheet({
           />
           {pdfAvailable ? (
             <ExportChoice
-              icon="file-pdf-box"
+              icon="file-document-outline"
               title="PDF"
               subtitle="Totals, balances, and settle-up"
               testID="export-pdf"
@@ -83,7 +77,7 @@ function ExportChoice({
   loading,
   onPress,
 }: {
-  icon: "file-delimited-outline" | "file-pdf-box";
+  icon: "file-delimited-outline" | "file-document-outline";
   title: string;
   subtitle: string;
   testID: string;
@@ -102,7 +96,7 @@ function ExportChoice({
       style={[styles.choice, { borderColor: theme.colors.outlineVariant }]}
     >
       <View style={styles.choiceRow}>
-        <MaterialCommunityIcons name={icon} size={22} color={theme.colors.primary} />
+        <MaterialCommunityIcons name={icon} size={22} color={theme.colors.onSurfaceVariant} />
         <View style={styles.choiceCopy}>
           <Text variant="titleMedium">{title}</Text>
           <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>{subtitle}</Text>

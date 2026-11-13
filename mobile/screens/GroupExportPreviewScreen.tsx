@@ -61,7 +61,6 @@ export function GroupExportPreviewScreen({ shot }: { shot: GroupExportShot }) {
       </Appbar.Header>
       <GroupExportSheet
         visible={showChoice}
-        groupName="Flat 4B"
         pdfAvailable
         busy={null}
         onDismiss={() => undefined}
