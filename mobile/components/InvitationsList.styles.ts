@@ -16,14 +16,20 @@ export const styles = StyleSheet.create({
   memberRight: {
     flexDirection: "row",
     alignItems: "center",
+    flexShrink: 0,
+  },
+  actionSlot: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
   },
   memberName: {
     marginBottom: 2,
   },
   removeMemberButton: {
     margin: 0,
-  },
-  removingIndicator: {
-    marginHorizontal: 8,
+    width: 40,
+    height: 40,
   },
 });

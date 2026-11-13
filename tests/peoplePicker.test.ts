@@ -2,6 +2,7 @@ import {
   canRemovePerson,
   type ExistingPerson,
   filterAndSortExistingPeople,
+  memberRowShowsMenu,
 } from "../mobile/utils/peoplePicker.ts";
 
 const people: ExistingPerson[] = [
@@ -93,6 +94,28 @@ Deno.test("does not allow removal of a former person", () => {
 
   if (canRemove) {
     throw new Error("former people should not have a removal action");
+  }
+});
+
+Deno.test("menu column stays off for you and on for someone else or an unlinked email", () => {
+  const you = memberRowShowsMenu(
+    { type: "member", user_id: "me", email: "you@example.com" },
+    { canManageMembers: true, currentUserId: "me", canBlock: true },
+  );
+  const other = memberRowShowsMenu(
+    { type: "member", user_id: "rahul", email: "rahul@example.com" },
+    { canManageMembers: true, currentUserId: "me", canBlock: true },
+  );
+  const unlinked = memberRowShowsMenu(
+    { type: "member", user_id: null, email: "sam@example.com" },
+    { canManageMembers: true, currentUserId: "me", canBlock: true },
+  );
+  const former = memberRowShowsMenu(
+    { type: "former", user_id: null, email: "dev@example.com" },
+    { canManageMembers: true, currentUserId: "me", canBlock: true },
+  );
+  if (you || !other || !unlinked || former) {
+    throw new Error("menu column did not match the people-row actions");
   }
 });
 
