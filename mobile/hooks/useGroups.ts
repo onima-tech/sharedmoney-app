@@ -102,6 +102,7 @@ export function useGroupDetails(groupId: string | null) {
     data: query.data ?? null,
     isLoading: query.isLoading,
     isFetching: query.isFetching,
+    isFetched: query.isFetched,
     error: query.error ?? null,
     refetch: query.refetch,
   };

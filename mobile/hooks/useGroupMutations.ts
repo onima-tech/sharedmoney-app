@@ -221,6 +221,50 @@ export function useUpdateGroup(onSuccess?: () => void) {
   };
 }
 
+export function useUpdateGroupDefaultSplit(onSuccess?: () => void) {
+  const queryClient = useQueryClient();
+
+  const mutation = useMutation({
+    mutationFn: async (variables: {
+      groupId: string;
+      mode: "equal" | "weights";
+      weights: Record<string, number>;
+    }) => {
+      const response = await fetchWithAuth(`/groups/${variables.groupId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          default_split_mode: variables.mode,
+          default_split_weights: variables.weights,
+        }),
+      });
+
+      return response.json() as Promise<Group>;
+    },
+    onSuccess: (result, variables) => {
+      invalidateGroupAdjacents(queryClient, variables.groupId);
+      queryClient.setQueryData<Group[]>(queryKeys.groups, (current) =>
+        (current || []).map((item) =>
+          item.id === result.id ? { ...item, ...result } : item
+        )
+      );
+      queryClient.setQueryData<GroupWithMembers | null>(
+        queryKeys.group(variables.groupId),
+        (current) => (current ? { ...current, ...result } : current)
+      );
+      captureAnalyticsEvent(ANALYTICS_EVENTS.GROUP_UPDATED, {
+        updated_default_split: true,
+      });
+      onSuccess?.();
+    },
+  });
+
+  return {
+    mutate: mutation.mutateAsync,
+    isLoading: mutation.isPending,
+    error: (mutation.error as Error | null) ?? null,
+  };
+}
+
 export function useAddMember(onSuccess?: () => void) {
   const queryClient = useQueryClient();
 

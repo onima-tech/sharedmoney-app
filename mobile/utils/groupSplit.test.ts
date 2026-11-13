@@ -1,9 +1,13 @@
 import { assertEquals } from "jsr:@std/assert@1";
+import { calculateShareSplits } from "./splits.ts";
 import {
   extractSplitAmongParticipantIds,
   getLastEnteredExpenseSplitAmong,
   intersectSplitAmongWithAvailable,
+  newExpenseSplitFromGroupDefault,
+  normalizeGroupDefaultSplit,
   resolveGroupDefaultSplitAmong,
+  storedExpenseSplitState,
   type GroupSplitTransaction,
 } from "./groupSplit.ts";
 
@@ -219,6 +223,103 @@ Deno.test("resolveGroupDefaultSplitAmong falls back to the group feed", () => {
     }),
     undefined,
   );
+});
+
+Deno.test("equal group default keeps the last expense's people and ignores stored weights", () => {
+  const prefill = newExpenseSplitFromGroupDefault({
+    groupDefault: normalizeGroupDefaultSplit({
+      default_split_mode: "equal",
+      default_split_weights: { a: 2, b: 5 },
+    }),
+    availableParticipantIds: ["a", "b", "c"],
+    rememberedIds: ["b", "a", "gone"],
+  });
+
+  assertEquals(prefill.mode, "equal");
+  assertEquals(prefill.selectedIds, ["b", "a"]);
+  assertEquals(prefill.shares, { b: 1, a: 1 });
+});
+
+Deno.test("weights group default prefills every current person, including a couple share of 2", () => {
+  const prefill = newExpenseSplitFromGroupDefault({
+    groupDefault: normalizeGroupDefaultSplit({
+      default_split_mode: "weights",
+      default_split_weights: { a: 2, b: "1", gone: 4, c: 0 },
+    }),
+    availableParticipantIds: ["c", "a", "b"],
+    rememberedIds: ["a"],
+  });
+
+  assertEquals(prefill.mode, "shares");
+  assertEquals(prefill.selectedIds, ["c", "a", "b"]);
+  assertEquals(prefill.shares, { c: 1, a: 2, b: 1 });
+  assertEquals(
+    calculateShareSplits(900, prefill.selectedIds, prefill.shares),
+    [
+      { participant_id: "c", amount: 225 },
+      { participant_id: "a", amount: 450 },
+      { participant_id: "b", amount: 225 },
+    ],
+  );
+});
+
+Deno.test("changing the group default never rewrites a stored expense", () => {
+  const fridayDinner = {
+    id: 42,
+    amount: 900,
+    description: "Friday dinner",
+    splits: [
+      { participant_id: "a", amount: 300 },
+      { participant_id: "b", amount: 300 },
+      { participant_id: "c", amount: 300 },
+    ],
+  };
+  const before = structuredClone(fridayDinner);
+  const stored = storedExpenseSplitState(fridayDinner);
+  const nextDefault = normalizeGroupDefaultSplit({
+    default_split_mode: "weights",
+    default_split_weights: { a: 2, b: 1, c: 1 },
+  });
+  const prefill = newExpenseSplitFromGroupDefault({
+    groupDefault: nextDefault,
+    availableParticipantIds: ["a", "b", "c"],
+  });
+  prefill.shares.a = 9;
+
+  assertEquals(fridayDinner, before);
+  assertEquals(stored.mode, "equal");
+  assertEquals(stored.selectedIds, ["a", "b", "c"]);
+  assertEquals(stored.amounts, { a: "300.00", b: "300.00", c: "300.00" });
+  assertEquals(prefill.mode, "shares");
+  assertEquals(
+    calculateShareSplits(900, ["a", "b", "c"], { a: 2, b: 1, c: 1 })
+      .map((split) => split.amount),
+    [450, 225, 225],
+  );
+});
+
+Deno.test("a stored unequal expense stays on its saved amounts after the default changes", () => {
+  const expense = {
+    splits: [
+      { participant_id: "a", amount: 400 },
+      { participant_id: "b", amount: 300 },
+      { participant_id: "c", amount: 200 },
+    ],
+  };
+  const stored = storedExpenseSplitState(expense);
+  newExpenseSplitFromGroupDefault({
+    groupDefault: { mode: "weights", weights: { a: 2, b: 1, c: 1 } },
+    availableParticipantIds: ["a", "b", "c"],
+  });
+
+  assertEquals(stored.mode, "unequal");
+  assertEquals(stored.amounts, { a: "400.00", b: "300.00", c: "200.00" });
+  assertEquals(expense.splits.map((split) => split.amount), [400, 300, 200]);
+});
+
+Deno.test("missing group default is an equal split", () => {
+  assertEquals(normalizeGroupDefaultSplit(null), { mode: "equal", weights: {} });
+  assertEquals(normalizeGroupDefaultSplit({}), { mode: "equal", weights: {} });
 });
 
 Deno.test("intersectSplitAmongWithAvailable drops people who left the group", () => {

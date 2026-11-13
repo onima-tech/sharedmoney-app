@@ -1,4 +1,10 @@
 import { Transaction, TransactionSplit } from "../types";
+import {
+  clampShareCount,
+  defaultShareMap,
+  formatAmountInput,
+  isUnequalSplit,
+} from "./splits";
 
 export type GroupSplitTransaction = Pick<
   Transaction,
@@ -105,6 +111,120 @@ export function getLastEnteredExpenseSplitAmong(
   if (!latest) return undefined;
   const ids = extractSplitAmongParticipantIds(latest);
   return ids.length > 0 ? ids : undefined;
+}
+
+export type GroupDefaultSplitMode = "equal" | "weights";
+
+export interface GroupDefaultSplit {
+  mode: GroupDefaultSplitMode;
+  /** Participant id -> share count. Ignored unless mode is weights. */
+  weights: Record<string, number>;
+}
+
+export interface ExpenseSplitFormState {
+  mode: "equal" | "unequal" | "shares";
+  selectedIds: string[];
+  shares: Record<string, number>;
+  amounts: Record<string, string>;
+}
+
+/**
+ * Read a group's saved default. Missing or unknown data is an equal split.
+ * Weights are a prefill for a new expense, not a rewrite of saved splits.
+ */
+export function normalizeGroupDefaultSplit(
+  group: {
+    default_split_mode?: unknown;
+    default_split_weights?: unknown;
+  } | null | undefined,
+): GroupDefaultSplit {
+  const raw = group?.default_split_weights;
+  const weights: Record<string, number> = {};
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    for (const [id, value] of Object.entries(raw)) {
+      if (!id) continue;
+      const numeric = typeof value === "number" ? value : Number(value);
+      if (!Number.isFinite(numeric)) continue;
+      weights[id] = clampShareCount(numeric);
+    }
+  }
+
+  const mode: GroupDefaultSplitMode = group?.default_split_mode === "weights"
+    ? "weights"
+    : "equal";
+  return { mode, weights };
+}
+
+/**
+ * Split state for an expense that has already been saved.
+ * The group default is not an input: changing it cannot alter this result.
+ */
+export function storedExpenseSplitState(expense: {
+  splits?: Array<{ participant_id?: string | null; amount: number }> | null;
+  split_among_participant_ids?: string[] | null;
+}): ExpenseSplitFormState {
+  const splits = Array.isArray(expense.splits) ? expense.splits : [];
+  if (splits.length > 0) {
+    const selectedIds = uniqueIds(splits.map((split) => split.participant_id));
+    const amounts: Record<string, string> = {};
+    for (const split of splits) {
+      if (!split.participant_id) continue;
+      amounts[split.participant_id] = formatAmountInput(split.amount);
+    }
+    return {
+      mode: isUnequalSplit(splits) ? "unequal" : "equal",
+      selectedIds,
+      shares: defaultShareMap(selectedIds),
+      amounts,
+    };
+  }
+
+  const selectedIds = uniqueIds(expense.split_among_participant_ids || []);
+  return {
+    mode: "equal",
+    selectedIds,
+    shares: defaultShareMap(selectedIds),
+    amounts: {},
+  };
+}
+
+/**
+ * Prefill for a new expense. Equal keeps the last expense's people.
+ * Weights include every current person and do not consult that memory.
+ */
+export function newExpenseSplitFromGroupDefault({
+  groupDefault,
+  availableParticipantIds,
+  rememberedIds,
+}: {
+  groupDefault: GroupDefaultSplit;
+  availableParticipantIds: string[];
+  rememberedIds?: string[] | null;
+}): Pick<ExpenseSplitFormState, "mode" | "selectedIds" | "shares"> {
+  const available = uniqueIds(availableParticipantIds);
+
+  switch (groupDefault.mode) {
+    case "weights": {
+      const shares: Record<string, number> = {};
+      for (const id of available) {
+        shares[id] = clampShareCount(groupDefault.weights[id] ?? 1);
+      }
+      return { mode: "shares", selectedIds: available, shares };
+    }
+    case "equal": {
+      const remembered = intersectSplitAmongWithAvailable(rememberedIds, available);
+      const selectedIds = remembered.length > 0 ? remembered : available;
+      return {
+        mode: "equal",
+        selectedIds,
+        shares: defaultShareMap(selectedIds),
+      };
+    }
+    default: {
+      const unreachable: never = groupDefault.mode;
+      return unreachable;
+    }
+  }
 }
 
 export function resolveGroupDefaultSplitAmong({

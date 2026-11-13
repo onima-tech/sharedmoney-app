@@ -10,6 +10,7 @@ import { parsePath } from '../_shared/path-parser.ts';
 import { createEmptyResponse, createSuccessResponse } from '../_shared/response.ts';
 import { fetchUserEmails } from '../_shared/user-email.ts';
 import { fetchUserProfiles } from '../_shared/user-profiles.ts';
+import { parseGroupDefaultSplitUpdate } from '../_shared/groupDefaultSplit.ts';
 import { normalizeOptionalCurrency } from '../_shared/rates.ts';
 import { isValidUUID, validateBodySize, validateGroupData } from '../_shared/validation.ts';
 import { requireMinVersion } from '../_shared/version-check.ts';
@@ -21,7 +22,7 @@ import { requireMinVersion } from '../_shared/version-check.ts';
  * - GET /groups - List groups for the current user (excludes per-user hidden)
  * - GET /groups/:id - Get group details with members
  * - POST /groups - Create new group
- * - PATCH /groups/:id - Update name/description (owners) and/or settlement currency settings (active members)
+ * - PATCH /groups/:id - Update name/description (owners), settlement currency settings, and/or the default split for new expenses (active members)
  * - POST /groups/:id/archive | /unarchive | /hide - Per-user list visibility (no hard delete)
  * 
  * Group hard-delete is disabled (DB prevent_group_delete). Use Leave / Archive / Hide instead.
@@ -29,6 +30,9 @@ import { requireMinVersion } from '../_shared/version-check.ts';
  * @route /functions/v1/groups
  * @requires Authentication
  */
+
+const GROUP_COLUMNS =
+  'id, name, description, created_by, created_at, updated_at, settlement_currency, unify_balances, default_split_mode, default_split_weights';
 
 interface Group {
   id: string;
@@ -39,6 +43,8 @@ interface Group {
   updated_at: string;
   settlement_currency?: string | null;
   unify_balances?: boolean;
+  default_split_mode?: 'equal' | 'weights';
+  default_split_weights?: Record<string, number>;
 }
 
 interface GroupMember {
@@ -151,6 +157,8 @@ Deno.serve(async (req: Request) => {
           updated_at,
           settlement_currency,
           unify_balances,
+          default_split_mode,
+          default_split_weights,
           group_members!inner(status, archived_at, hidden_at)
         `)
         .eq('group_members.user_id', user.id)
@@ -203,7 +211,7 @@ Deno.serve(async (req: Request) => {
       const [groupResult, membersResult] = await Promise.all([
         supabase
           .from('groups')
-          .select('id, name, description, created_by, created_at, updated_at, settlement_currency, unify_balances')
+          .select(GROUP_COLUMNS)
           .eq('id', groupId)
           .single(),
         supabase
@@ -296,7 +304,7 @@ Deno.serve(async (req: Request) => {
       // Fetch the created group to return full details
       const { data: group, error: fetchError } = await supabase
         .from('groups')
-        .select('id, name, description, created_by, created_at, updated_at, settlement_currency, unify_balances')
+        .select(GROUP_COLUMNS)
         .eq('id', groupResult)
         .single();
 
@@ -318,6 +326,8 @@ Deno.serve(async (req: Request) => {
         description?: string | null;
         settlement_currency?: string | null;
         unify_balances?: boolean;
+        default_split_mode?: unknown;
+        default_split_weights?: unknown;
       };
       try {
         updates = body ? JSON.parse(body) : {};
@@ -329,14 +339,23 @@ Deno.serve(async (req: Request) => {
       const hasDescription = updates.description !== undefined;
       const hasCurrency = updates.settlement_currency !== undefined;
       const hasUnify = updates.unify_balances !== undefined;
+      const hasDefaultSplit = updates.default_split_mode !== undefined
+        || updates.default_split_weights !== undefined;
+      const defaultSplit = hasDefaultSplit
+        ? parseGroupDefaultSplitUpdate(updates)
+        : null;
 
-      if (!hasName && !hasDescription && !hasCurrency && !hasUnify) {
+      if (!hasName && !hasDescription && !hasCurrency && !hasUnify && !hasDefaultSplit) {
         return createErrorResponse(400, 'Provide at least one field to update', 'VALIDATION_ERROR', undefined, req);
+      }
+
+      if (defaultSplit && !defaultSplit.ok) {
+        return createErrorResponse(400, defaultSplit.error, 'VALIDATION_ERROR', undefined, req);
       }
 
       const { data: existing, error: existingError } = await supabase
         .from('groups')
-        .select('id, name, description, created_by, created_at, updated_at, settlement_currency, unify_balances')
+        .select(GROUP_COLUMNS)
         .eq('id', groupId)
         .single();
 
@@ -398,7 +417,7 @@ Deno.serve(async (req: Request) => {
           .from('groups')
           .update(detailUpdates)
           .eq('id', groupId)
-          .select('id, name, description, created_by, created_at, updated_at, settlement_currency, unify_balances')
+          .select(GROUP_COLUMNS)
           .single();
 
         if (updateError || !updatedDetails) {
@@ -443,6 +462,36 @@ Deno.serve(async (req: Request) => {
         }
 
         group = currencyGroup;
+      }
+
+      // Default split is a prefill for new expenses. The RPC updates the group
+      // row only, so expenses already saved keep their split amounts.
+      if (defaultSplit?.ok) {
+        const { data: splitGroup, error } = await supabase.rpc('update_group_default_split', {
+          p_group_id: groupId,
+          p_mode: defaultSplit.value.mode,
+          p_weights: defaultSplit.value.weights,
+        });
+
+        if (error || !splitGroup) {
+          const message = (error?.message || '').toLowerCase();
+          if (message.includes('not an active group member')) {
+            return createErrorResponse(403, 'Not an active group member', 'PERMISSION_DENIED', undefined, req);
+          }
+          if (message.includes('not authenticated')) {
+            return createErrorResponse(401, 'Unauthorized', 'AUTH_ERROR', undefined, req);
+          }
+          if (
+            message.includes('default_split')
+            || message.includes('each weight')
+            || message.includes('group not found')
+          ) {
+            return createErrorResponse(400, error?.message || 'Invalid default split', 'VALIDATION_ERROR', undefined, req);
+          }
+          return handleError(error || new Error('Group not found after default split update'), 'updating group default split', req);
+        }
+
+        group = splitGroup;
       }
 
       return createSuccessResponse(group, 200, 0, req);
