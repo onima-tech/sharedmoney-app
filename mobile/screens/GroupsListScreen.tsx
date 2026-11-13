@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useQueryClient } from "@tanstack/react-query";
 import React, { useEffect, useState } from "react";
 import { InteractionManager, Platform, ScrollView, StyleSheet, TouchableOpacity, useWindowDimensions, View } from "react-native";
@@ -37,6 +38,7 @@ import { resolveGroupsHomeLoadedTiming } from "../utils/groupsHomeLoadedTelemetr
 import { captureIdentifiedAnalyticsEvent } from "../utils/posthogAnalytics";
 import { ANALYTICS_EVENTS } from "../utils/posthogEvents";
 import { getSeenGroupIds, markGroupSeen } from "../utils/seenGroups";
+import { rememberAllBalances } from "../utils/groupOpenCache";
 import { partitionGroupsBySection } from "../utils/groupListSections";
 import { recordSentryListCounts } from "../utils/sentryTelemetry";
 import { balanceAmountColor, groupListBalanceWords } from "../utils/balanceRowLabels";
@@ -132,6 +134,10 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
     isLoading: balancesLoading,
     refetch: refetchBalances,
   } = useBalances(undefined, { enabled: balancesEnabled });
+  useEffect(() => {
+    if (!user?.id || !balancesEnabled || balancesLoading) return;
+    void rememberAllBalances(AsyncStorage, user.id, balancesData);
+  }, [balancesData, balancesEnabled, balancesLoading, user?.id]);
   // Deferred all-balances: do not paint "Even" until the query has resolved.
   const balancesReady = balancesEnabled && !balancesLoading;
 

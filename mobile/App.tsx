@@ -59,6 +59,14 @@ import {
   useNotifications,
 } from "./hooks/useNotifications";
 import { fetchBalances } from "./hooks/useBalances";
+import { fetchParticipants } from "./hooks/useParticipants";
+import { fetchSettlements } from "./hooks/useSettlements";
+import {
+  clearSavedGroupMoney,
+  hydrateGroupOpenCache,
+  seedAllBalancesQuery,
+  seedGroupOpenQueries,
+} from "./utils/groupOpenCache";
 import {
   fetchInvitationsForEmail,
   redeemGroupInviteLinkRPC,
@@ -94,6 +102,10 @@ import {
   GroupsPhase1PreviewScreen,
   readGroupsPhase1Shot,
 } from "./screens/GroupsPhase1PreviewScreen";
+import {
+  GroupsPhase2PreviewScreen,
+  readGroupsPhase2Shot,
+} from "./screens/GroupsPhase2PreviewScreen";
 import { extractBillSplitToken } from "./utils/billSplit";
 import { NotificationDetailScreen } from "./screens/NotificationDetailScreen";
 import { NotificationsScreen } from "./screens/NotificationsScreen";
@@ -251,6 +263,7 @@ const DEV_CRASH_PREVIEW_ID = "SM-7K3Q-92";
 /** Module-level so remounts during auth bootstrap don't drop the QA deep link. */
 let pendingDevBillPreview: "dead" | "offline" | null = null;
 let pendingDevGroupsPhase1 = false;
+let pendingDevGroupsPhase2 = false;
 let pendingDevCrashPreview: "first" | "repeat" | "copied" | null = null;
 let pendingDevForceCrash = false;
 
@@ -285,6 +298,10 @@ function applyDevPreview(kind: DevPreviewKind): boolean {
     pendingDevGroupsPhase1 = true;
     return true;
   }
+  if (kind === "groups-phase2") {
+    pendingDevGroupsPhase2 = true;
+    return true;
+  }
   return false;
 }
 
@@ -299,6 +316,7 @@ function AppContent() {
     pendingDevBillPreview,
   );
   const [devGroupsPhase1, setDevGroupsPhase1] = useState(pendingDevGroupsPhase1);
+  const [devGroupsPhase2, setDevGroupsPhase2] = useState(pendingDevGroupsPhase2);
   const [devCrashPreview, setDevCrashPreview] = useState<
     null | "first" | "repeat" | "copied"
   >(pendingDevCrashPreview);
@@ -423,9 +441,12 @@ function AppContent() {
 
   const prefetchGroupData = React.useCallback(
     async (groupId: string) => {
-      // Critical path only: details + balances/stats + first ledger page.
-      // Defer activity, last-currency, and last-split-among so they do not
-      // contend with the balances edge function on open.
+      // Balance first, then the first ledger page. Stats and history stay
+      // behind the screens that open them.
+      await queryClientInstance.prefetchQuery({
+        queryKey: queryKeys.balances(groupId),
+        queryFn: () => fetchBalances(groupId, false),
+      });
       await Promise.all([
         queryClientInstance.prefetchQuery({
           queryKey: queryKeys.group(groupId),
@@ -440,30 +461,34 @@ function AppContent() {
             lastPage.has_more ? lastPage.next_cursor : null,
         }),
         queryClientInstance.prefetchQuery({
-          // Must include stats: GroupDetails / GroupStats share this key and need
-          // group_stats for My spending / Group summary (#349 key merge regression).
-          queryKey: queryKeys.balances(groupId),
-          queryFn: async () => {
-            const data = await fetchBalances(groupId, true);
-            if (data.group_stats) {
-              queryClientInstance.setQueryData(
-                queryKeys.groupStats(groupId),
-                data.group_stats
-              );
-            }
-            return data;
-          },
+          queryKey: queryKeys.settlements(groupId),
+          queryFn: () => fetchSettlements(groupId),
+        }),
+        queryClientInstance.prefetchQuery({
+          queryKey: queryKeys.participants(groupId),
+          queryFn: () => fetchParticipants(groupId),
         }),
       ]);
     },
     [queryClientInstance]
   );
 
-  // Clear and isolate cache on logout
+  const signedInUserIdRef = React.useRef<string | null>(session?.user?.id ?? null);
+  // Clear memory and the saved balances / ledger pages on sign-out.
   useEffect(() => {
-    if (!session) {
-      queryClientInstance.clear();
+    const userId = session?.user?.id ?? null;
+    if (userId) {
+      signedInUserIdRef.current = userId;
+      void hydrateGroupOpenCache(userId, AsyncStorage).then(() => {
+        seedAllBalancesQuery(queryClientInstance, userId);
+      });
+      return;
     }
+    queryClientInstance.clear();
+    const previousUserId = signedInUserIdRef.current;
+    if (!previousUserId) return;
+    signedInUserIdRef.current = null;
+    void clearSavedGroupMoney(previousUserId, AsyncStorage);
   }, [queryClientInstance, session?.user?.id]);
 
   /**
@@ -775,6 +800,7 @@ function AppContent() {
         if (devPreview === "bill-dead") setDevBillPreview("dead");
         if (devPreview === "bill-offline") setDevBillPreview("offline");
         if (devPreview === "groups-phase1") setDevGroupsPhase1(true);
+        if (devPreview === "groups-phase2") setDevGroupsPhase2(true);
         return;
       }
       const billToken = extractBillSplitToken(url);
@@ -1266,6 +1292,8 @@ function AppContent() {
 
   const handleGroupPress = (group: Group) => {
     setGroupDetailsOpenStartedAtMs(Date.now());
+    const userId = session?.user?.id;
+    if (userId) seedGroupOpenQueries(queryClientInstance, userId, group.id);
     prefetchGroupData(group.id).catch((err) =>
       logError(err, { context: "prefetchGroupData", groupId: group.id })
     );
@@ -1398,6 +1426,16 @@ function AppContent() {
     );
   }
 
+  if (__DEV__ && previewParam === "groups-phase2") {
+    return (
+      <GroupsPhase2PreviewScreen
+        shot={readGroupsPhase2Shot(
+          Platform.OS === "web" && typeof window !== "undefined" ? window.location.href : null,
+        )}
+      />
+    );
+  }
+
   if (__DEV__ && previewParam === "groups-phase1") {
     return (
       <GroupsPhase1PreviewScreen
@@ -1441,6 +1479,15 @@ function AppContent() {
     setSelectedGroup(null);
     clearJoinPathFromWebUrl();
   };
+
+  if (__DEV__ && devGroupsPhase2) {
+    const shot = readGroupsPhase2Shot(
+      Platform.OS === "web" && typeof window !== "undefined" ? window.location.href : null,
+    );
+    return (
+      <GroupsPhase2PreviewScreen key={`groups-phase2-${shot}`} shot={shot} />
+    );
+  }
 
   if (__DEV__ && devGroupsPhase1) {
     const shot = readGroupsPhase1Shot(

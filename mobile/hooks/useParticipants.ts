@@ -18,15 +18,19 @@ export async function fetchParticipants(
   return response.json();
 }
 
-export function useParticipants(groupId: string | null) {
+export function useParticipants(
+  groupId: string | null,
+  options?: { enabled?: boolean },
+) {
   const { user } = useAuth();
+  const enabledOption = options?.enabled;
 
   const query = useQuery<Participant[], Error>({
     queryKey: groupId
       ? queryKeys.participants(groupId)
       : queryKeys.participants(""),
     queryFn: () => fetchParticipants(groupId as string),
-    enabled: !!user?.id && !!groupId,
+    enabled: !!user?.id && !!groupId && enabledOption !== false,
     placeholderData: [],
     staleTime: 60_000,
   });

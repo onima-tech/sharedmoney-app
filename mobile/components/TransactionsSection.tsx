@@ -36,6 +36,9 @@ export interface LedgerRowProps {
   onHighlightedInteraction?: (transactionId: number) => void;
   onEditExpense: (t: Transaction) => void;
   onEditPayment?: (s: Settlement) => void;
+  /** Opens the read-only detail. Edit stays on that screen. */
+  onOpenExpense?: (t: Transaction) => void;
+  onOpenPayment?: (s: Settlement) => void;
   /** Preview and tests can pin the viewer without a session. */
   viewerUserId?: string | null;
 }
@@ -70,6 +73,8 @@ export const LedgerRow: React.FC<LedgerRowProps> = ({
   onHighlightedInteraction,
   onEditExpense,
   onEditPayment,
+  onOpenExpense,
+  onOpenPayment,
   viewerUserId,
 }) => {
   const theme = useTheme();
@@ -108,8 +113,8 @@ export const LedgerRow: React.FC<LedgerRowProps> = ({
 
     return (
       <Pressable
-        onPress={() => onEditPayment?.(settlement)}
-        disabled={!canEdit}
+        onPress={() => (onOpenPayment ? onOpenPayment(settlement) : onEditPayment?.(settlement))}
+        disabled={!canEdit && !onOpenPayment}
         accessibilityRole="button"
         accessibilityLabel={`${title}, ${amountText}`}
         testID={`ledger-payment-${settlement.id}`}
@@ -192,7 +197,7 @@ export const LedgerRow: React.FC<LedgerRowProps> = ({
           openTransactionWithHighlightConsumption(
             highlightedTransactionId,
             onHighlightedInteraction,
-            () => onEditExpense(transaction),
+            () => (onOpenExpense ? onOpenExpense(transaction) : onEditExpense(transaction)),
           )
         }
         accessibilityRole="button"

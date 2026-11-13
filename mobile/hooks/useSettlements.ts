@@ -27,14 +27,18 @@ function invalidateSettlementAdjacents(queryClient: QueryClient, groupId?: strin
   queryClient.invalidateQueries({ queryKey: queryKeys.activity(groupId) });
 }
 
-export function useSettlements(groupId?: string | null) {
+export function useSettlements(
+  groupId?: string | null,
+  options?: { enabled?: boolean },
+) {
   const { user } = useAuth();
+  const enabledOption = options?.enabled;
 
   const query = useQuery<SettlementsResponse, Error>({
     // Guarded by `enabled`, so groupId is always non-null inside queryFn
     queryKey: groupId ? queryKeys.settlements(groupId) : queryKeys.settlements(""),
     queryFn: () => fetchSettlements(groupId as string),
-    enabled: !!user?.id && !!groupId,
+    enabled: !!user?.id && !!groupId && enabledOption !== false,
     staleTime: 30_000,
   });
 
