@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { Group, GroupWithMembers } from "../types";
 import { fetchWithAuth } from "../utils/api";
+import { groupsWithoutRecency } from "../utils/groupRecency";
 import { queryKeys } from "./queryKeys";
 
 const groupsCacheKey = (userId: string) => `sm:rq-groups:${userId}`;
@@ -14,16 +15,17 @@ async function readGroupsCache(userId: string): Promise<Group[] | null> {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return null;
-    return parsed as Group[];
+    return groupsWithoutRecency(parsed as Group[]);
   } catch {
     return null;
   }
 }
 
 function writeGroupsCache(userId: string, groups: Group[]): void {
-  AsyncStorage.setItem(groupsCacheKey(userId), JSON.stringify(groups)).catch(
-    () => {}
-  );
+  AsyncStorage.setItem(
+    groupsCacheKey(userId),
+    JSON.stringify(groupsWithoutRecency(groups)),
+  ).catch(() => {});
 }
 
 export async function fetchGroups(): Promise<Group[]> {

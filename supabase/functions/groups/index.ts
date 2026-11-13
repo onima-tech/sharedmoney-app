@@ -1,5 +1,11 @@
 import { recordLastSeenAppIfAuthenticated, verifyAuth } from '../_shared/auth.ts';
 import { createErrorResponse, handleError } from '../_shared/error-handler.ts';
+import {
+  collectActivityNameIds,
+  lastActivityByGroup,
+  type HistoryActivityRow,
+} from '../_shared/groupLastActivity.ts';
+import { log } from '../_shared/logger.ts';
 import { parsePath } from '../_shared/path-parser.ts';
 import { createEmptyResponse, createSuccessResponse } from '../_shared/response.ts';
 import { fetchUserEmails } from '../_shared/user-email.ts';
@@ -48,6 +54,49 @@ interface GroupWithMembers extends Group {
   archived_at?: string | null;
   hidden_at?: string | null;
   members?: Array<GroupMember & { email?: string; full_name?: string | null; avatar_url?: string | null }>;
+}
+
+async function attachGroupLastActivity(
+  supabase: any,
+  groups: Array<Record<string, unknown>>,
+  viewerId: string,
+): Promise<Array<Record<string, unknown>>> {
+  const ids = groups
+    .map((group) => group.id)
+    .filter((id): id is string => typeof id === 'string' && isValidUUID(id));
+  if (ids.length === 0) {
+    return groups.map((group) => ({ ...group, last_activity: null }));
+  }
+
+  const { data, error } = await supabase.rpc('latest_group_activity', { p_group_ids: ids });
+  if (error) {
+    log.error('latest group activity failed', 'groups', { error: error.message });
+    return groups;
+  }
+
+  const rows = (data || []) as HistoryActivityRow[];
+  const { userIds, participantIds } = collectActivityNameIds(rows);
+  const names = new Map<string, string | null>();
+  const [profiles, participantsResult] = await Promise.all([
+    fetchUserProfiles(supabase, userIds),
+    participantIds.length > 0
+      ? supabase.from('participants').select('id, full_name').in('id', participantIds)
+      : Promise.resolve({ data: [] }),
+  ]);
+  for (const [id, profile] of profiles) {
+    names.set(id, profile.full_name);
+  }
+  for (const person of participantsResult.data || []) {
+    if (person?.id && !names.has(person.id)) {
+      names.set(person.id, person.full_name ?? null);
+    }
+  }
+
+  const byGroup = lastActivityByGroup(rows, names, viewerId);
+  return groups.map((group) => ({
+    ...group,
+    last_activity: typeof group.id === 'string' ? (byGroup.get(group.id) ?? null) : null,
+  }));
 }
 
 Deno.serve(async (req: Request) => {
@@ -139,7 +188,8 @@ Deno.serve(async (req: Request) => {
         return 0; // Keep DB order (created_at DESC) within the same bucket
       });
 
-      return createSuccessResponse(flattenedGroups, 200, 0, req); // No caching - real-time data
+      const withActivity = await attachGroupLastActivity(supabase, flattenedGroups, user.id);
+      return createSuccessResponse(withActivity, 200, 0, req); // No caching - real-time data
     }
 
     // Handle GET /groups/:id - Get group details with members

@@ -56,6 +56,14 @@ export interface AmountInfo {
   color: string;
 }
 
+export interface GroupLastActivity {
+  actor: string;
+  action: 'added' | 'edited' | 'removed' | 'settled';
+  subject: string | null;
+  /** ISO timestamp. The list formats the relative time from this. */
+  at: string;
+}
+
 export interface Group {
   id: string;
   name: string;
@@ -70,6 +78,11 @@ export interface Group {
   hidden_at?: string | null;
   settlement_currency?: string | null;
   unify_balances?: boolean;
+  /**
+   * Present only on a fresh GET /groups. Null means the fetch found no
+   * activity. Omitted on the disk cache so recency is not painted from disk.
+   */
+  last_activity?: GroupLastActivity | null;
 }
 
 export interface GroupMember {

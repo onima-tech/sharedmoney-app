@@ -43,18 +43,20 @@ function loadStyles(filename) {
   return styles;
 }
 
-test("Former/Archived accordion hit target is at least 44pt", () => {
+test("Archived, Former and New group are a muted text row at least 44pt", () => {
   const styles = loadStyles(
     path.join(__dirname, "../screens/GroupsListScreen.tsx")
   );
-  assert.ok((styles.sectionAccordion.minHeight ?? 0) >= 44);
+  assert.ok((styles.footerLine.minHeight ?? 0) >= 44);
+  assert.equal(styles.footerLine.flexDirection, "row");
+  assert.equal(styles.sectionAccordion, undefined);
+  assert.equal(styles.permissionCard, undefined);
 });
 
-test("Archived and Former share disclosure header inset + compact divider children", () => {
+test("Archived and Former children stay compact divider rows, not cards", () => {
   const styles = loadStyles(
     path.join(__dirname, "../screens/GroupsListScreen.tsx")
   );
-  // Inset is padding on the touchable, not a left margin on the row.
   assert.equal(styles.nestedGroupRow.marginLeft, undefined);
   assert.equal(styles.nestedGroupTouchable.paddingHorizontal, 14);
   assert.equal(styles.nestedGroupRow.borderBottomWidth, 1);
@@ -64,9 +66,7 @@ test("Archived and Former share disclosure header inset + compact divider childr
   assert.equal(styles.groupItem.borderBottomWidth, 1);
   assert.equal(styles.groupItem.marginBottom, undefined);
   assert.notEqual(styles.nestedGroupRow.borderRadius, 14);
-  assert.ok((styles.sectionDisclosureHeader.minHeight ?? 0) >= 44);
-  assert.equal(styles.sectionDisclosureHeaderRow.paddingHorizontal, 14);
-  assert.ok((styles.sectionDisclosureHeaderRow.gap ?? 0) >= 8);
+  assert.equal(styles.positionNumber.fontSize, 40);
 });
 
 test("preview mirror keeps shared disclosure inset + nested divider chrome", () => {
@@ -290,16 +290,18 @@ function harnessWithFormer(loading = false) {
   };
 }
 
-test("Home list uses Groups header New group action and clearance, not a FAB", () => {
+test("Home list uses Groups header, New group text, and clearance, not a FAB", () => {
   const tree = harnessWithFormer().render();
   assert.equal(nodes(tree).some((n) => n.type === "FAB"), false);
-  assert.ok(nodes(tree).find((n) => n.props?.testID === "groups-section-header"));
+  const header = nodes(tree).find((n) => n.type === "Content");
+  assert.equal(header.props.title, "Groups");
   const action = nodes(tree).find((n) => n.props?.testID === "new-group-action");
   assert.ok(action);
-  assert.equal(action.props.mode, "text");
-  assert.match(String(action.props.children), /New group/);
+  assert.equal(action.props.mode, undefined);
+  assert.equal(action.props.children, "New group");
   const clearance = nodes(tree).find((n) => n.props?.testID === "home-list-clearance");
   assert.equal(flatten(clearance.props.style).height, 32);
+  assert.equal(nodes(tree).some((n) => n.props?.testID === "groups-section-header"), false);
 });
 
 test("expanded Former children use compact divider rows like Archived", () => {
@@ -310,7 +312,7 @@ test("expanded Former children use compact divider rows like Archived", () => {
     (n) => n.props?.testID === "former-groups-accordion"
   );
   assert.ok(accordion);
-  assert.ok((flatten(accordion.props.style).minHeight ?? 0) >= 44);
+  assert.equal(accordion.props.children, "Former 1");
 
   const nested = nodes(tree).find(
     (n) => n.props?.testID === "nested-group-row-g-former"
@@ -341,38 +343,19 @@ test("Home with groups has no Split CTA or Recent bills; only Groups header", ()
   assert.equal(nodes(tree).some((n) => n.props?.testID === "split-bill-entry"), false);
   assert.equal(nodes(tree).some((n) => n.props?.testID === "recent-bills-row"), false);
   assert.equal(nodes(tree).some((n) => n.props?.testID === "one-time-bills-row"), false);
-  assert.ok(nodes(tree).find((n) => n.props?.testID === "groups-section-header"));
+  assert.ok(nodes(tree).find((n) => n.props?.testID === "groups-footer-line"));
 });
 
-test("bootstrap and initial Groups query share the same loading rows and header position", () => {
+test("bootstrap and initial Groups query share a calm placeholder, not a skeleton stack", () => {
   const app = harnessWithFormer(true);
   const initial = app.render();
   const bootstrap = app.skeleton();
-  const realStyles = loadStyles(path.join(__dirname, "../screens/GroupsListScreen.tsx"));
   for (const tree of [initial, bootstrap]) {
-    const rows = nodes(tree).find(node => node.type?.name === "GroupsHomeSkeletonRows");
-    assert.ok(rows);
-    const header = nodes(tree).find(node => node.type === "Header");
-    assert.ok(header);
-    assert.equal(nodes(tree).some(node =>
-      node.type === "Button" && node.props.testID === "split-bill-entry"
-    ), false);
+    assert.ok(nodes(tree).find(node => node.props?.testID === "home-position-placeholder"));
+    const header = nodes(tree).find(node => node.type === "Content");
+    assert.equal(header.props.title, "Groups");
+    assert.equal(nodes(tree).some(node => node.props?.testID === "group-skeleton-row"), false);
     assert.equal(nodes(tree).some(node => node.type === "ActivityIndicator"), false);
-  }
-  const rows = app.skeletonRows();
-  const surfaces = nodes(rows).filter(node => node.props?.testID === "group-skeleton-row");
-  assert.equal(surfaces.length, 6);
-  for (const row of surfaces) {
-    assert.equal(flatten(row.props.style).borderRadius, realStyles.groupItem.borderRadius);
-    assert.equal(flatten(row.props.style).borderBottomWidth, realStyles.groupItem.borderBottomWidth);
-    assert.equal(flatten(row.props.style).marginBottom, realStyles.groupItem.marginBottom);
-    assert.deepEqual(flatten(row.props.children.props.style), realStyles.groupTouchable);
-    // Uncached rows reserve the common name + description height, not a name-only row.
-    const subtitle = nodes(row).find(node => node.props?.testID === "group-skeleton-subtitle");
-    assert.ok(subtitle);
-    const sub = flatten(subtitle.props.style);
-    assert.equal(sub.marginTop, realStyles.groupSubtitle.marginTop);
-    assert.equal(sub.height, 16);
   }
 });
 
@@ -383,14 +366,13 @@ test("Home with groups has no full-width Split a bill entry", () => {
   assert.ok(nodes(tree).find(node => node.props?.testID === "new-group-action"));
 });
 
-test("top-level cards without a description keep the skeleton's description line height", () => {
+test("group rows drop the description and do not paint recency from cache", () => {
   const tree = harnessWithFormer().render();
-  const spacer = nodes(tree).find(n => n.props?.testID === "group-subtitle-spacer-g-plain");
-  assert.ok(spacer, "name-only card must reserve the subtitle line");
-  const realStyles = loadStyles(path.join(__dirname, "../screens/GroupsListScreen.tsx"));
-  assert.equal(flatten(spacer.props.style).marginTop, realStyles.groupSubtitle.marginTop);
-  assert.equal(flatten(spacer.props.style).height, 16);
-  assert.equal(nodes(tree).find(n => n.props?.testID === "group-subtitle-spacer-g-active"), undefined);
+  const text = nodes(tree).map((n) => n.props?.children).flat().filter((child) => typeof child === "string");
+  assert.equal(text.includes("Utilities"), false);
+  assert.equal(text.includes("You left"), false);
+  assert.equal(nodes(tree).find(n => n.props?.testID === "group-recency-g-active"), undefined);
+  assert.equal(nodes(tree).find(n => n.props?.testID === "group-subtitle-spacer-g-plain"), undefined);
 });
 
 test("Home empty state: Create a group primary + tertiary one-time split link", () => {
@@ -489,6 +471,18 @@ test("Home empty state: Create a group primary + tertiary one-time split link", 
       if (id === "../utils/groupsListStatus") {
         return { groupsListStatusLine: () => null };
       }
+      if (id === "../utils/groupOpenCache") {
+        return { rememberAllBalances: async () => {} };
+      }
+      if (id === "../utils/homePosition") {
+        return {
+          homePosition: () => ({ kind: "unknown" }),
+          countGroupsWithViewerBalance: () => 0,
+        };
+      }
+      if (id === "../utils/groupRecency") {
+        return { groupRecencyLine: () => null };
+      }
       if (id === "../utils/networkErrors") {
         return { isBenignConnectivityError: () => false };
       }
@@ -524,7 +518,7 @@ test("Home empty state: Create a group primary + tertiary one-time split link", 
   assert.equal(nodes(tree).some((n) => n.props?.testID === "split-bill-entry"), false);
   const link = nodes(empty).find((n) => n.props?.testID === "home-empty-one-time-split");
   assert.ok(link);
-  assert.equal(link.props.children, "Just one bill? Split it without a group");
-  assert.equal(link.props.mode, "text");
+  assert.equal(link.props.children, "Split one bill");
+  assert.equal(link.type, "Text");
   assert.ok(nodes(empty).some((n) => n.props?.testID === "groups-empty-create"));
 });

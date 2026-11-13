@@ -106,6 +106,10 @@ import {
   GroupsPhase2PreviewScreen,
   readGroupsPhase2Shot,
 } from "./screens/GroupsPhase2PreviewScreen";
+import {
+  GroupsPhase3PreviewScreen,
+  readGroupsPhase3Shot,
+} from "./screens/GroupsPhase3PreviewScreen";
 import { extractBillSplitToken } from "./utils/billSplit";
 import { NotificationDetailScreen } from "./screens/NotificationDetailScreen";
 import { NotificationsScreen } from "./screens/NotificationsScreen";
@@ -264,6 +268,7 @@ const DEV_CRASH_PREVIEW_ID = "SM-7K3Q-92";
 let pendingDevBillPreview: "dead" | "offline" | null = null;
 let pendingDevGroupsPhase1 = false;
 let pendingDevGroupsPhase2 = false;
+let pendingDevGroupsPhase3 = false;
 let pendingDevCrashPreview: "first" | "repeat" | "copied" | null = null;
 let pendingDevForceCrash = false;
 
@@ -302,6 +307,10 @@ function applyDevPreview(kind: DevPreviewKind): boolean {
     pendingDevGroupsPhase2 = true;
     return true;
   }
+  if (kind === "groups-phase3") {
+    pendingDevGroupsPhase3 = true;
+    return true;
+  }
   return false;
 }
 
@@ -317,6 +326,7 @@ function AppContent() {
   );
   const [devGroupsPhase1, setDevGroupsPhase1] = useState(pendingDevGroupsPhase1);
   const [devGroupsPhase2, setDevGroupsPhase2] = useState(pendingDevGroupsPhase2);
+  const [devGroupsPhase3, setDevGroupsPhase3] = useState(pendingDevGroupsPhase3);
   const [devCrashPreview, setDevCrashPreview] = useState<
     null | "first" | "repeat" | "copied"
   >(pendingDevCrashPreview);
@@ -801,6 +811,7 @@ function AppContent() {
         if (devPreview === "bill-offline") setDevBillPreview("offline");
         if (devPreview === "groups-phase1") setDevGroupsPhase1(true);
         if (devPreview === "groups-phase2") setDevGroupsPhase2(true);
+        if (devPreview === "groups-phase3") setDevGroupsPhase3(true);
         return;
       }
       const billToken = extractBillSplitToken(url);
@@ -1426,6 +1437,16 @@ function AppContent() {
     );
   }
 
+  if (__DEV__ && previewParam === "groups-phase3") {
+    return (
+      <GroupsPhase3PreviewScreen
+        shot={readGroupsPhase3Shot(
+          Platform.OS === "web" && typeof window !== "undefined" ? window.location.href : null,
+        )}
+      />
+    );
+  }
+
   if (__DEV__ && previewParam === "groups-phase2") {
     return (
       <GroupsPhase2PreviewScreen
@@ -1479,6 +1500,15 @@ function AppContent() {
     setSelectedGroup(null);
     clearJoinPathFromWebUrl();
   };
+
+  if (__DEV__ && devGroupsPhase3) {
+    const shot = readGroupsPhase3Shot(
+      Platform.OS === "web" && typeof window !== "undefined" ? window.location.href : null,
+    );
+    return (
+      <GroupsPhase3PreviewScreen key={`groups-phase3-${shot}`} shot={shot} />
+    );
+  }
 
   if (__DEV__ && devGroupsPhase2) {
     const shot = readGroupsPhase2Shot(

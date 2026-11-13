@@ -25,6 +25,7 @@ Deno.test("dev resolves preview kinds from path and ?preview= query", () => {
   assertEquals(resolveDevPreview("?preview=bill-offline", true), "bill-offline");
   assertEquals(resolveDevPreview("?preview=groups-phase1&shot=search", true), "groups-phase1");
   assertEquals(resolveDevPreview("?preview=groups-phase2&shot=owed", true), "groups-phase2");
+  assertEquals(resolveDevPreview("?preview=groups-phase3&shot=split", true), "groups-phase3");
   assertEquals(resolveDevPreview("?preview=crash-copied", true), "crash-copied");
 });
 

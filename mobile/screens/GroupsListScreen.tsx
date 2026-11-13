@@ -6,14 +6,9 @@ import {
   ActivityIndicator,
   Appbar,
   Button,
-  Icon,
-  Surface,
   Text,
-  TouchableRipple,
   useTheme,
 } from "react-native-paper";
-import { Skeleton, SkeletonGroup } from "../components/Skeleton";
-import { GROUP_BALANCE_SLOT_WIDTH } from "../constants/layout";
 import { GroupBalanceBadge } from "../components/GroupBalanceBadge";
 import { NotificationBell } from "../components/NotificationBell";
 import { useAuth } from "../contexts/AuthContext";
@@ -41,7 +36,9 @@ import { getSeenGroupIds, markGroupSeen } from "../utils/seenGroups";
 import { rememberAllBalances } from "../utils/groupOpenCache";
 import { partitionGroupsBySection } from "../utils/groupListSections";
 import { recordSentryListCounts } from "../utils/sentryTelemetry";
-import { balanceAmountColor, groupListBalanceWords } from "../utils/balanceRowLabels";
+import { groupListBalanceWords } from "../utils/balanceRowLabels";
+import { countGroupsWithViewerBalance, homePosition, type HomePosition } from "../utils/homePosition";
+import { groupRecencyLine } from "../utils/groupRecency";
 import { groupsListStatusLine } from "../utils/groupsListStatus";
 import { isBenignConnectivityError } from "../utils/networkErrors";
 import { formatShareCurrency } from "../utils/settleShareMessage";
@@ -68,6 +65,80 @@ interface GroupsListScreenProps {
   homeLoadStartedAtMs: number;
   /** Groups query was in the empty loading state during this visit. */
   homeSawInitialLoading: boolean;
+}
+
+function spokenGroupBalance(
+  balances: Array<{ user_id?: string; amount: number; currency: string }> | undefined,
+  userId: string | undefined,
+  ready: boolean,
+): string {
+  if (!ready || !balances) return "";
+  const mine = userId ? balances.filter((row) => row.user_id === userId) : balances;
+  const material = mine.filter((row) => Math.abs(row.amount) >= 0.01);
+  if (material.length === 0) return "Even";
+  const main = [...material].sort((a, b) => Math.abs(b.amount) - Math.abs(a.amount))[0];
+  const words = groupListBalanceWords(
+    main.amount,
+    formatShareCurrency(Math.abs(main.amount), main.currency),
+  );
+  return material.length > 1 ? `${words} (+)` : words;
+}
+
+export function HomePositionView({ position }: { position: HomePosition }) {
+  const theme = useTheme();
+  switch (position.kind) {
+    case "unknown":
+      return (
+        <View testID="home-position-placeholder" style={styles.positionBlock}>
+          <View style={[styles.numberPlaceholder, { backgroundColor: theme.colors.surfaceVariant }]} />
+        </View>
+      );
+    case "split":
+      return (
+        <View testID="home-position-split" style={styles.positionBlock}>
+          <Text
+            variant="bodySmall"
+            testID="home-position-muted"
+            style={{ color: theme.colors.onSurfaceVariant }}
+          >
+            {position.mutedLine}
+          </Text>
+        </View>
+      );
+    case "amount":
+      return (
+        <View
+          testID="home-position"
+          accessibilityLabel={`${position.label}, ${position.numberText}, ${position.mutedLine}`}
+          style={styles.positionBlock}
+        >
+          <Text
+            variant="bodyMedium"
+            testID="home-position-label"
+            style={{ color: theme.colors.onSurfaceVariant }}
+          >
+            {position.label}
+          </Text>
+          <Text
+            testID="home-position-number"
+            style={[styles.positionNumber, { color: theme.colors.onSurface }]}
+          >
+            {position.numberText}
+          </Text>
+          <Text
+            variant="bodySmall"
+            testID="home-position-muted"
+            style={{ color: theme.colors.onSurfaceVariant }}
+          >
+            {position.mutedLine}
+          </Text>
+        </View>
+      );
+    default: {
+      const _never: never = position;
+      return _never;
+    }
+  }
 }
 
 function useIsOffline(): boolean {
@@ -119,6 +190,7 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
   const preferenceMutation = useUpdateNotificationPreference();
   const [pushError, setPushError] = useState<string | null>(null);
   const [enablingPush, setEnablingPush] = useState(false);
+  const [showLoadingLine, setShowLoadingLine] = useState(false);
   const { data: groups, isLoading: loading, error, refetch } = useGroups();
   const deviceOffline = useIsOffline();
   // Share App's deferred all-balances enablement: wait for list paint, then badges.
@@ -131,15 +203,15 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
   }, [loading, groups.length]);
   const {
     data: balancesData,
-    isLoading: balancesLoading,
+    hasData: balancesHaveData,
     refetch: refetchBalances,
   } = useBalances(undefined, { enabled: balancesEnabled });
   useEffect(() => {
-    if (!user?.id || !balancesEnabled || balancesLoading) return;
+    if (!user?.id || !balancesEnabled || !balancesHaveData) return;
     void rememberAllBalances(AsyncStorage, user.id, balancesData);
-  }, [balancesData, balancesEnabled, balancesLoading, user?.id]);
-  // Deferred all-balances: do not paint "Even" until the query has resolved.
-  const balancesReady = balancesEnabled && !balancesLoading;
+  }, [balancesData, balancesEnabled, balancesHaveData, user?.id]);
+  // A disk-seeded response paints immediately. Missing data is not Even.
+  const balancesReady = balancesHaveData;
 
   // Start time is the visit stamp from App, not Date.now() in this effect.
   // Resetting it here raced the ready effect and logged duration_ms 0 on cache.
@@ -272,6 +344,26 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
     });
   }, [loading, groups.length]);
 
+  const position = homePosition({
+    hasBalances: balancesReady,
+    overallBalances: balancesData?.overall_balances ?? [],
+    groupsWithBalance: countGroupsWithViewerBalance(
+      balancesData?.group_balances ?? [],
+      activeGroups.map((group) => group.id),
+      user?.id,
+    ),
+    activeGroupCount: activeGroups.length,
+  });
+
+  useEffect(() => {
+    if (!isInitialLoading) {
+      setShowLoadingLine(false);
+      return;
+    }
+    const timer = setTimeout(() => setShowLoadingLine(true), 800);
+    return () => clearTimeout(timer);
+  }, [isInitialLoading]);
+
   // Helper function to render a group item.
   // nested=true: Archived/Former children — indented hairline rows (not active cards).
   const renderGroupItem = (group: Group, options?: { nested?: boolean }) => {
@@ -285,7 +377,9 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
       ? notifications.data?.unread_by_group[group.id] ?? 0
       : 0;
     const hasUnreadActivity = unreadActivityCount > 0;
-    const description = group.description?.trim();
+    const recency = groupRecencyLine(group, new Date());
+    const groupBalance = balancesData?.group_balances?.find((entry) => entry.group_id === group.id);
+    const spokenAmount = spokenGroupBalance(groupBalance?.balances, user?.id, balancesReady);
 
     const row = (
       <TouchableOpacity
@@ -296,7 +390,7 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
         ]}
         onPress={() => handleGroupPress(group)}
         activeOpacity={0.7}
-        accessibilityLabel={`${group.name}${isNew ? ", new group" : ""}${hasUnreadActivity ? `, ${unreadActivityCount} unread ${unreadActivityCount === 1 ? "notification" : "notifications"}` : ""}${group.archived_at ? ", archived" : ""}${group.user_status === "left" ? ", former member" : ""}`}
+        accessibilityLabel={`${group.name}${recency ? `, ${recency}` : ""}${spokenAmount ? `, ${spokenAmount}` : ""}${isNew ? ", new group" : ""}${hasUnreadActivity ? `, ${unreadActivityCount} unread ${unreadActivityCount === 1 ? "notification" : "notifications"}` : ""}${group.archived_at ? ", archived" : ""}${group.user_status === "left" ? ", former member" : ""}`}
       >
         <View style={[styles.groupMainContent, expandedText && styles.groupMainContentExpanded]}>
           <View style={styles.groupInfo}>
@@ -336,23 +430,20 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
                 />
               ) : null}
             </View>
-            {description ? (
+            {recency ? (
               <Text
                 variant="bodySmall"
+                testID={`group-recency-${group.id}`}
                 style={[
                   styles.groupSubtitle,
                   { color: theme.colors.onSurfaceVariant },
                 ]}
-                numberOfLines={expandedText ? undefined : 1}
+                numberOfLines={1}
                 ellipsizeMode="tail"
               >
-                {description}
+                {recency}
               </Text>
-            ) : nested ? null : (
-              // Keep every top-level card at the skeleton's name + description height.
-              <View testID={`group-subtitle-spacer-${group.id}`} accessible={false}
-                style={[styles.groupSubtitle, { height: theme.fonts.bodySmall.lineHeight * fontScale }]} />
-            )}
+            ) : null}
           </View>
         </View>
 
@@ -425,7 +516,7 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
     >
       <Appbar.Header style={{ backgroundColor: theme.colors.background }}>
         <Appbar.Content
-          title="Your Groups"
+          title="Groups"
           titleStyle={{ fontWeight: "bold" }}
         />
         {notificationsEnabled ? (
@@ -463,67 +554,26 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
       ) : null}
 
       {isInitialLoading ? (
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-          testID="groups-loading-placeholders"
-        >
-          <GroupsHomeSkeletonRows embedded />
-        </ScrollView>
+        <View style={styles.scrollContent} testID="groups-loading-placeholders">
+          <View testID="home-position-placeholder" style={styles.positionBlock}>
+            <View style={[styles.numberPlaceholder, { backgroundColor: theme.colors.surfaceVariant }]} />
+          </View>
+          {showLoadingLine ? (
+            <Text
+              variant="bodySmall"
+              testID="groups-loading-line"
+              style={{ color: theme.colors.onSurfaceVariant, marginTop: 24 }}
+            >
+              Loading your groups…
+            </Text>
+          ) : null}
+        </View>
       ) : (
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {notificationsEnabled && shouldShowNotificationPrimer({
-            platform: Platform.OS,
-            activeGroupCount: activeGroups.length,
-            preference: notifications.data?.preference,
-          }) ? (
-            <Surface style={[styles.permissionCard, { backgroundColor: theme.colors.primaryContainer }]} elevation={0}>
-              <Text variant="titleMedium" style={styles.permissionTitle}>Know when an expense affects you</Text>
-              <Text variant="bodyMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-                Get a notification when someone adds, changes, or removes an expense involving you.
-              </Text>
-              {pushError ? <Text variant="bodySmall" style={{ color: theme.colors.error, marginTop: 8 }}>{pushError}</Text> : null}
-              <View style={styles.permissionActions}>
-                <Button
-                  mode="contained"
-                  loading={enablingPush}
-                  disabled={enablingPush}
-                  onPress={async () => {
-                    setEnablingPush(true);
-                    setPushError(null);
-                    try {
-                      const preference = await enablePushNotifications();
-                      if (user?.id) {
-                        setCachedNotificationPreference(queryClient, user.id, preference);
-                      }
-                    } catch (error) {
-                      logError(error, {
-                        context: "enable push notifications",
-                        platform: Platform.OS,
-                        surface: "groups primer",
-                      });
-                      setPushError("We couldn’t turn on notifications. You can try again in Profile.");
-                    } finally {
-                      setEnablingPush(false);
-                    }
-                  }}
-                >
-                  Turn on notifications
-                </Button>
-                <Button
-                  mode="text"
-                  onPress={() => preferenceMutation.mutate({ action: "dismiss_nudge" })}
-                >
-                  Not now
-                </Button>
-              </View>
-            </Surface>
-          ) : null}
           {!hasAnyVisibleGroups && !listStatus ? (
             <View style={styles.emptyContainer} testID="groups-empty-state">
               <Text
@@ -535,7 +585,7 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
                   maxWidth: 280,
                 }}
               >
-                Create a group for ongoing shared expenses with friends or roommates.
+                Create a group for shared expenses.
               </Text>
               <Button
                 mode="contained"
@@ -546,194 +596,128 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
               >
                 Create a group
               </Button>
-              <Button
-                mode="text"
-                compact
+              <Text
                 onPress={() => openSplitBill()}
                 testID="home-empty-one-time-split"
-                style={{ marginTop: 8 }}
-                labelStyle={{ fontWeight: "500" }}
+                accessibilityRole="button"
+                style={{ marginTop: 16, color: theme.colors.onSurfaceVariant, fontSize: 15 }}
               >
-                Just one bill? Split it without a group
-              </Button>
+                Split one bill
+              </Text>
             </View>
           ) : (
             <>
-              <View style={styles.groupsSectionHeader} testID="groups-section-header">
-                <Text variant="labelLarge" style={[styles.sectionHeaderLabel, { color: theme.colors.onSurfaceVariant }]}>
-                  Groups
-                </Text>
-                <Button
-                  mode="text"
-                  compact
-                  testID="new-group-action"
-                  onPress={() => setShowCreateGroup(true)}
-                  accessibilityLabel="New group"
-                >
-                  New group
-                </Button>
-              </View>
+              <HomePositionView position={position} />
 
-              {/* Active Groups */}
               {activeGroups.map((group) => renderGroupItem(group))}
 
-              {/* Quiet one-time bills row — after active groups, above Archived/Former. */}
               {oneTimeSummary ? (
-                <View
-                  style={[styles.groupItem, { borderBottomColor: theme.colors.outlineVariant, marginTop: 4 }]}
+                <TouchableOpacity
+                  testID="one-time-bills-row"
+                  style={[styles.textRow, { borderBottomColor: theme.colors.outlineVariant }]}
+                  onPress={() => openSplitBill()}
+                  activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`One-time bills, ${oneTimeSummary.unsettled_count} open`}
                 >
-                  <TouchableOpacity
-                    testID="one-time-bills-row"
-                    style={[styles.groupTouchable, expandedText && styles.groupTouchableExpanded]}
-                    onPress={() => openSplitBill()}
-                    activeOpacity={0.7}
-                    accessibilityRole="button"
-                    accessibilityLabel={`One-time bills, ${
-                      oneTimeSummary.unsettled_count === 1
-                        ? "1 unsettled"
-                        : `${oneTimeSummary.unsettled_count} unsettled`
-                    }, ${groupListBalanceWords(
-                      oneTimeSummary.net_minor / 100,
-                      formatShareCurrency(Math.abs(oneTimeSummary.net_minor) / 100, oneTimeSummary.currency),
-                    )}`}
-                  >
-                    <View style={[styles.groupMainContent, expandedText && styles.groupMainContentExpanded]}>
-                      <View style={styles.groupInfo}>
-                        <Text
-                          variant="titleMedium"
-                          style={[styles.groupName, { color: theme.colors.onSurface }]}
-                          numberOfLines={1}
-                        >
-                          One-time bills
-                        </Text>
-                        <Text
-                          variant="bodySmall"
-                          style={[styles.groupSubtitle, { color: theme.colors.onSurfaceVariant }]}
-                          numberOfLines={1}
-                        >
-                          {oneTimeSummary.unsettled_count === 1
-                            ? "1 unsettled"
-                            : `${oneTimeSummary.unsettled_count} unsettled`}
-                        </Text>
-                      </View>
-                    </View>
-                    <View
-                      style={[
-                        styles.oneTimeBalanceSlot,
-                        expandedText && styles.balanceBadgeExpanded,
-                      ]}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 13,
-                          lineHeight: 16,
-                          fontWeight: "700",
-                          textAlign: "right",
-                          color: balanceAmountColor(
-                            oneTimeSummary.net_minor / 100,
-                            theme.colors,
-                            { dark: theme.dark },
-                          ),
-                        }}
-                        numberOfLines={2}
-                      >
-                        {groupListBalanceWords(
-                          oneTimeSummary.net_minor / 100,
-                          formatShareCurrency(
-                            Math.abs(oneTimeSummary.net_minor) / 100,
-                            oneTimeSummary.currency,
-                          ),
-                        )}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
+                  <Text style={[styles.textRowLabel, { color: theme.colors.onSurface }]}>
+                    {`One-time bills · ${oneTimeSummary.unsettled_count} open`}
+                  </Text>
+                </TouchableOpacity>
               ) : null}
 
-              {/* Archived + Former share one disclosure: header card, inset icon,
-                  compact divider children (not active Surface cards). */}
-              {archivedGroups.length > 0 ? (
-                <View
-                  style={[styles.sectionAccordion, { backgroundColor: theme.colors.surface }]}
-                  testID="archived-groups-accordion"
-                >
-                  <TouchableRipple
-                    onPress={() => setArchivedGroupsExpanded(!archivedGroupsExpanded)}
-                    accessibilityRole="button"
-                    accessibilityState={{ expanded: archivedGroupsExpanded }}
-                    accessibilityLabel={`Archived, ${archivedGroups.length} groups`}
-                    style={styles.sectionDisclosureHeader}
-                  >
-                    <View style={styles.sectionDisclosureHeaderRow}>
-                      <Icon
-                        source="archive-outline"
-                        size={20}
-                        color={theme.colors.onSurfaceVariant}
-                      />
-                      <Text
-                        style={[
-                          styles.sectionAccordionTitle,
-                          { color: theme.colors.onSurfaceVariant, flex: 1 },
-                        ]}
-                      >
-                        {`Archived (${archivedGroups.length})`}
-                      </Text>
-                      <Icon
-                        source={archivedGroupsExpanded ? "chevron-up" : "chevron-down"}
-                        size={20}
-                        color={theme.colors.onSurfaceVariant}
-                      />
-                    </View>
-                  </TouchableRipple>
-                  {archivedGroupsExpanded ? (
-                    <View
-                      style={[styles.sectionDisclosureContent, { backgroundColor: theme.colors.background }]}
+              <View style={styles.footerLine} testID="groups-footer-line">
+                <View style={styles.footerLinks}>
+                  {archivedGroups.length > 0 ? (
+                    <Text
+                      onPress={() => setArchivedGroupsExpanded(!archivedGroupsExpanded)}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: archivedGroupsExpanded }}
+                      testID="archived-groups-accordion"
+                      style={[styles.footerText, { color: theme.colors.onSurfaceVariant }]}
                     >
-                      {archivedGroups.map((group) => renderGroupItem(group, { nested: true }))}
-                    </View>
+                      {`Archived ${archivedGroups.length}`}
+                    </Text>
+                  ) : null}
+                  {archivedGroups.length > 0 && formerGroups.length > 0 ? (
+                    <Text style={[styles.footerText, { color: theme.colors.onSurfaceVariant }]}>·</Text>
+                  ) : null}
+                  {formerGroups.length > 0 ? (
+                    <Text
+                      onPress={() => setFormerGroupsExpanded(!formerGroupsExpanded)}
+                      accessibilityRole="button"
+                      accessibilityState={{ expanded: formerGroupsExpanded }}
+                      testID="former-groups-accordion"
+                      style={[styles.footerText, { color: theme.colors.onSurfaceVariant }]}
+                    >
+                      {`Former ${formerGroups.length}`}
+                    </Text>
                   ) : null}
                 </View>
-              ) : null}
-
-              {formerGroups.length > 0 ? (
-                <View
-                  style={[styles.sectionAccordion, { backgroundColor: theme.colors.surface }]}
-                  testID="former-groups-accordion"
+                <Text
+                  onPress={() => setShowCreateGroup(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="New group"
+                  testID="new-group-action"
+                  style={[styles.footerText, { color: theme.colors.primary }]}
                 >
-                  <TouchableRipple
-                    onPress={() => setFormerGroupsExpanded(!formerGroupsExpanded)}
+                  New group
+                </Text>
+              </View>
+
+              {archivedGroupsExpanded
+                ? archivedGroups.map((group) => renderGroupItem(group, { nested: true }))
+                : null}
+              {formerGroupsExpanded
+                ? formerGroups.map((group) => renderGroupItem(group, { nested: true }))
+                : null}
+
+              {notificationsEnabled && shouldShowNotificationPrimer({
+                platform: Platform.OS,
+                activeGroupCount: activeGroups.length,
+                preference: notifications.data?.preference,
+              }) ? (
+                <View testID="notifications-primer" style={styles.primerRow}>
+                  <Text style={[styles.textRowLabel, { color: theme.colors.onSurfaceVariant, flex: 1 }]}>
+                    Know when an expense affects you
+                  </Text>
+                  <Text
+                    onPress={() => {
+                      if (enablingPush) return;
+                      setEnablingPush(true);
+                      setPushError(null);
+                      void enablePushNotifications()
+                        .then((preference) => {
+                          if (user?.id) {
+                            setCachedNotificationPreference(queryClient, user.id, preference);
+                          }
+                        })
+                        .catch((enableError) => {
+                          logError(enableError, {
+                            context: "enable push notifications",
+                            platform: Platform.OS,
+                            surface: "groups primer",
+                          });
+                          setPushError("We couldn’t turn on notifications. You can try again in Profile.");
+                        })
+                        .finally(() => setEnablingPush(false));
+                    }}
                     accessibilityRole="button"
-                    accessibilityState={{ expanded: formerGroupsExpanded }}
-                    accessibilityLabel={`Former, ${formerGroups.length} groups`}
-                    style={styles.sectionDisclosureHeader}
+                    testID="notifications-primer-turn-on"
+                    style={[styles.footerText, { color: theme.colors.primary }]}
                   >
-                    <View style={styles.sectionDisclosureHeaderRow}>
-                      <Icon
-                        source="history"
-                        size={20}
-                        color={theme.colors.onSurfaceVariant}
-                      />
-                      <Text
-                        style={[
-                          styles.sectionAccordionTitle,
-                          { color: theme.colors.onSurfaceVariant, flex: 1 },
-                        ]}
-                      >
-                        {`Former (${formerGroups.length})`}
-                      </Text>
-                      <Icon
-                        source={formerGroupsExpanded ? "chevron-up" : "chevron-down"}
-                        size={20}
-                        color={theme.colors.onSurfaceVariant}
-                      />
-                    </View>
-                  </TouchableRipple>
-                  {formerGroupsExpanded ? (
-                    <View
-                      style={[styles.sectionDisclosureContent, { backgroundColor: theme.colors.background }]}
-                    >
-                      {formerGroups.map((group) => renderGroupItem(group, { nested: true }))}
-                    </View>
+                    {enablingPush ? "Turning on…" : "Turn on"}
+                  </Text>
+                  <Text
+                    onPress={() => preferenceMutation.mutate({ action: "dismiss_nudge" })}
+                    accessibilityRole="button"
+                    testID="notifications-primer-dismiss"
+                    style={[styles.footerText, { color: theme.colors.onSurfaceVariant }]}
+                  >
+                    Not now
+                  </Text>
+                  {pushError ? (
+                    <Text variant="bodySmall" style={{ color: theme.colors.error, width: "100%" }}>{pushError}</Text>
                   ) : null}
                 </View>
               ) : null}
@@ -768,59 +752,18 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
 };
 
 /** Shared by the groups query and the auth/profile bootstrap gate. */
-export function GroupsHomeSkeletonRows({ embedded = false }: { embedded?: boolean } = {}) {
-  const theme = useTheme();
-  const { fontScale } = useWindowDimensions();
-  const expandedText = fontScale > 1;
-  const rows = (
-    <SkeletonGroup>
-      {[0, 1, 2, 3, 4, 5].map((key) => (
-        <View key={key} testID="group-skeleton-row" style={[styles.groupItem, { borderBottomColor: theme.colors.outlineVariant }]}>
-          <View style={[styles.groupTouchable, expandedText && styles.groupTouchableExpanded]}>
-            <View style={[styles.groupMainContent, expandedText && styles.groupMainContentExpanded]}>
-              <View style={styles.groupInfo}>
-                <View style={{ height: theme.fonts.titleMedium.lineHeight * fontScale, justifyContent: "center" }}>
-                  <Skeleton width={key % 2 ? "80%" : "60%"} height={16} />
-                </View>
-                {/* Uncached first paint: assume the common row with a description line. */}
-                <View testID="group-skeleton-subtitle" style={[styles.groupSubtitle,
-                  { height: theme.fonts.bodySmall.lineHeight * fontScale, justifyContent: "center" }]}>
-                  <Skeleton width={key % 2 ? "45%" : "35%"} height={10} />
-                </View>
-              </View>
-            </View>
-            <View style={[{ width: GROUP_BALANCE_SLOT_WIDTH, paddingHorizontal: 2, paddingVertical: 2 }, expandedText && styles.balanceBadgeExpanded]}>
-              <Skeleton width="100%" height={12} />
-            </View>
-          </View>
-        </View>
-      ))}
-    </SkeletonGroup>
-  );
-  if (embedded) return rows;
-  return (
-    <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}
-      showsVerticalScrollIndicator={false} testID="groups-loading-placeholders">
-      {rows}
-    </ScrollView>
-  );
-}
-
 export function GroupsHomeSkeleton() {
   const theme = useTheme();
   return (
     <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
       <Appbar.Header style={{ backgroundColor: theme.colors.background }}>
-        <Appbar.Content title="Your Groups" titleStyle={{ fontWeight: "bold" }} />
+        <Appbar.Content title="Groups" titleStyle={{ fontWeight: "bold" }} />
       </Appbar.Header>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        testID="groups-loading-placeholders"
-      >
-        <GroupsHomeSkeletonRows embedded />
-      </ScrollView>
+      <View style={styles.scrollContent} testID="groups-loading-placeholders">
+        <View testID="home-position-placeholder" style={styles.positionBlock}>
+          <View style={[styles.numberPlaceholder, { backgroundColor: theme.colors.surfaceVariant }]} />
+        </View>
+      </View>
     </View>
   );
 }
@@ -841,16 +784,60 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 16,
   },
-  sectionHeaderLabel: {
-    fontWeight: "700",
-    letterSpacing: 0.2,
+  positionBlock: {
+    gap: 2,
+    marginBottom: 12,
   },
-  groupsSectionHeader: {
+  positionNumber: {
+    fontSize: 40,
+    lineHeight: 48,
+    fontWeight: "700",
+    letterSpacing: -0.8,
+  },
+  numberPlaceholder: {
+    width: 148,
+    height: 40,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  textRow: {
+    minHeight: 44,
+    justifyContent: "center",
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "transparent",
+  },
+  textRowLabel: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "500",
+  },
+  footerLine: {
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    gap: 12,
+    marginTop: 8,
+  },
+  footerLinks: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexShrink: 1,
+    gap: 8,
+  },
+  footerText: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: "500",
+  },
+  primerRow: {
     minHeight: 44,
-    marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: 12,
+    marginTop: 8,
   },
   emptyContainer: {
     paddingVertical: 64,
@@ -860,14 +847,6 @@ const styles = StyleSheet.create({
   emptyCreateGroup: {
     alignSelf: "stretch",
     maxWidth: 320,
-  },
-  oneTimeBalanceSlot: {
-    width: GROUP_BALANCE_SLOT_WIDTH,
-    flexShrink: 0,
-    alignItems: "flex-end",
-    justifyContent: "center",
-    paddingHorizontal: 2,
-    paddingVertical: 2,
   },
   groupItem: {
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -904,23 +883,6 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
   },
-  permissionCard: {
-    borderRadius: 12,
-    padding: 18,
-    marginBottom: 16,
-  },
-  permissionTitle: {
-    fontWeight: "700",
-    marginBottom: 6,
-  },
-  permissionActions: {
-    flexDirection: "row",
-    alignItems: "center",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 16,
-  },
-  // New Styles
   groupSubtitle: {
     marginTop: 2,
   },
@@ -948,39 +910,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     maxWidth: "100%",
   },
-  // Secondary Home sections (Archived / Former): one disclosure card, inset icons,
-  // compact divider children for both.
-  sectionAccordion: {
-    marginTop: 20,
-    marginBottom: 8,
-    borderRadius: 12,
-    // Expand/collapse hit target ≥44pt (Design soft note from #351/#357).
-    minHeight: 44,
-    overflow: "hidden",
-  },
-  sectionAccordionTitle: {
-    fontSize: 13,
-    lineHeight: 18,
-    fontWeight: "600",
-    letterSpacing: 0.2,
-  },
-  sectionDisclosureHeader: {
-    minHeight: 44,
-    justifyContent: "center",
-  },
-  sectionDisclosureHeaderRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    minHeight: 44,
-    // Match active group row content inset (groupTouchable paddingHorizontal).
-    paddingHorizontal: 14,
-    gap: 10,
-  },
-  sectionDisclosureContent: {
-    paddingTop: 0,
-    paddingBottom: 4,
-  },
-  // Nested Archived/Former children: same horizontal inset as header / active rows.
+  // Expanded Archived / Former rows stay open hairlines, not cards.
   nestedGroupRow: {
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
