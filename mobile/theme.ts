@@ -1,5 +1,6 @@
 import { MD3LightTheme, MD3DarkTheme, configureFonts } from "react-native-paper";
 import { Platform } from "react-native";
+import { darkThemeTokens } from "./themeTokens";
 
 const BRAND_CANVAS = "#F7F9FC";
 const BRAND_INK = "#17202A";
@@ -47,8 +48,8 @@ const lightColors = {
 // Dark Theme Colors
 const darkColors = {
   ...MD3DarkTheme.colors,
-  primary: "#9BB8FF",
-  onPrimary: "#101827",
+  primary: darkThemeTokens.primary,
+  onPrimary: darkThemeTokens.onPrimary,
   primaryContainer: "#183D98",
   onPrimaryContainer: "#E8EEFF",
   secondary: "#E58AA2",
@@ -63,9 +64,9 @@ const darkColors = {
   onError: "#2A0704",
   errorContainer: "#8C1D18",
   onErrorContainer: "#FFEDEA",
-  background: "#11171D",
+  background: darkThemeTokens.background,
   onBackground: "#E6ECF3",
-  surface: "#17202A",
+  surface: darkThemeTokens.surface,
   onSurface: "#E6ECF3",
   surfaceVariant: "#222D38",
   onSurfaceVariant: "#B7C2CF",
