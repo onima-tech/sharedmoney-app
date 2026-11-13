@@ -87,8 +87,11 @@ export function useBalances(
   return {
     data: query.data ?? { group_balances: [], overall_balances: [] },
     groupStats: (query.data?.group_stats ?? null) as GroupStatsResponse | null,
+    /** True once a response is in memory, including a disk seed via setQueryData. */
+    hasData: query.data != null,
     isLoading: query.isLoading,
     isFetching: query.isFetching,
+    isFetched: query.isFetched,
     error: query.error ?? null,
     refetch: query.refetch,
   };

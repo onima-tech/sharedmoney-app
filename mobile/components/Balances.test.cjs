@@ -63,7 +63,15 @@ function flatten(style) {
   return Object.assign({}, ...[style].flat(Infinity).filter(Boolean));
 }
 const balance = (id, amount, currency = "USD") => ({ participant_id: id, user_id: id, full_name: id === "me" ? "You" : id, amount, currency });
-const dashboard = (balances, overrides = {}, preferences = {}) => components(preferences).GroupDashboard({ balances, currentUserId: "me", defaultCurrency: "USD", loading: false, activeMemberCount: 3, ...overrides });
+const dashboard = (balances, overrides = {}, preferences = {}) => components(preferences).GroupDashboard({
+  balances,
+  currentUserId: "me",
+  defaultCurrency: "USD",
+  loading: false,
+  activeMemberCount: 3,
+  settleListOpen: true,
+  ...overrides,
+});
 
 function themes() {
   const module = { exports: {} };
@@ -166,7 +174,8 @@ test("dashboard unification renders compact viewer-involved rows in the settleme
   assert.equal(rows.length, 1);
   assert.match(text(rows[0]), /Alice owes you/);
   assert.match(text(rows[0]), /\+\$25(?!\.00)/);
-  assert.match(text(tree), /In one currency · USD/);
+  assert.match(text(byId(tree, "group-position-number")), /\$25/);
+  assert.match(text(byId(tree, "group-position-label")), /You're owed/);
   assert.doesNotMatch(text(tree), /Rates ›/);
   assert.equal(nodes(tree).some(node => node.type === "UnifiedBalanceHero"), false);
 });
@@ -192,15 +201,16 @@ test("dashboard unification preserves original-currency missing-rate leftovers w
   assert.doesNotMatch(text(tree), /All settled/);
 });
 
-test("dashboard unification true zero without missing rates shows All settled", () => {
+test("dashboard unification true zero without missing rates shows You're even", () => {
   const tree = dashboard([
     balance("me", 0), balance("Alice", 0),
-  ], { activeMemberCount: 2 }, {
+  ], { activeMemberCount: 2, settleListOpen: false }, {
     groupSettings: { enabled: true, settlementCurrency: "USD" },
     rateBook: { usdRates: { USD: 1, EUR: 0.8 }, overrides: {} },
   });
   assert.equal(settlementRows(tree).length, 0);
-  assert.match(text(byId(tree, "group-settlement-rows")), /All settled/);
+  assert.match(text(byId(tree, "group-position-label")), /You're even/);
+  assert.equal(nodes(tree).find(n => n.props.testID === "settle-up-button"), undefined);
 });
 
 test("dashboard unification zero converted amount with missing rate does not show false All settled", () => {
@@ -233,7 +243,7 @@ test("dashboard does not label third-party debts as debts to the viewer", () => 
   const tree = dashboard([balance("me", 0), balance("Alice", -50), balance("Bob", 50)]);
   assert.doesNotMatch(text(tree), /Alice owes you|Bob owes you|You owe Alice|You owe Bob/);
   assert.equal(settlementRows(tree).length, 0);
-  assert.match(text(byId(tree, "group-settlement-rows")), /All settled/);
+  assert.match(text(byId(tree, "group-position-label")), /You're even/);
 });
 
 test("dashboard one settlement renders exactly one compact row", () => {
@@ -251,23 +261,20 @@ test("dashboard both directions render two compact rows", () => {
   assert.match(text(tree), /Alice owes you/);
   assert.match(text(tree), /You owe Bob/);
 });
-test("settled multi-member group shows quiet status without a settlement action", () => {
+test("settled multi-member group shows You're even without Settle up", () => {
   for (const balances of [[], [balance("me", 0), balance("Bob", 0)]]) {
-    const tree = dashboard(balances, { activeMemberCount: 2, onSettlePress: () => assert.fail("No debt to record") });
-    const panel = byId(tree, "group-settlement-rows");
-    assert.ok(panel, "settled group must not silently hide its status");
-    assert.match(text(panel), /All settled/);
-    assert.equal(panel.type, "View", "settled status must not use a card surface");
-    const status = byId(panel, "group-settled-inline");
-    assert.ok(status);
-    assert.equal(status.props.style.flexDirection, "row");
-    assert.equal(status.props.style.minHeight, undefined);
-    assert.equal(status.props.style.backgroundColor, undefined);
-    assert.equal(status.props.style.borderWidth, undefined);
-    assert.ok(status.props.style.paddingVertical <= 4);
-    assert.ok(nodes(status).some(n => n.type === "Icon" && n.props.name === "check-circle-outline"));
+    const tree = dashboard(balances, {
+      activeMemberCount: 2,
+      settleListOpen: false,
+      onSettlePress: () => assert.fail("No debt to record"),
+      onOpenSettle: () => assert.fail("No debt to settle"),
+    });
+    const panel = byId(tree, "group-position");
+    assert.match(text(byId(panel, "group-position-label")), /You're even/);
+    assert.match(text(byId(panel, "group-position-number")), /\$0/);
+    assert.equal(nodes(tree).find(n => n.props.testID === "settle-up-button"), undefined);
+    assert.equal(nodes(tree).find(n => n.props.testID === "remind-button"), undefined);
     assert.equal(settlementRows(tree).length, 0);
-    assert.equal(nodes(panel).some(n => n.props.onPress || n.props.accessibilityRole === "button"), false);
   }
 });
 
@@ -409,15 +416,14 @@ test("former counterparty keeps Former styling on settle row", () => {
   assert.match(text(tree), /Alex/);
 });
 
-test("dashboard reserves the settlement row and not spending cards while balances load", () => {
-  for (const loading of [{ loading: true }, { statsLoading: true }]) {
-    const tree = dashboard([balance("me", 50), balance("Alice", -50)], loading);
-    assert.equal(settlementRows(tree).length, 0);
-    assert.ok(byId(tree, "group-dashboard-skeleton"));
-    assert.ok(byId(tree, "group-settlement-skeleton"));
-    assert.equal(nodes(tree).filter(n => n.props.testID === "group-stat-skeleton").length, 0);
-    assert.doesNotMatch(text(tree), /My spending|Group summary|Updating balances|Alice owes you|All settled|\$50/);
-  }
+test("dashboard reserves one number placeholder and not spending cards while balances load", () => {
+  const tree = dashboard([balance("me", 50), balance("Alice", -50)], { loading: true });
+  assert.equal(settlementRows(tree).length, 0);
+  assert.ok(byId(tree, "group-position-placeholder"));
+  assert.equal(nodes(tree).filter(n => n.props.testID === "group-stat-skeleton").length, 0);
+  assert.doesNotMatch(text(tree), /My spending|Group summary|Updating balances|Alice owes you|All settled|You're even|\$50/);
+  const withStatsOnly = dashboard([balance("me", 50), balance("Alice", -50)], { statsLoading: true });
+  assert.match(text(withStatsOnly), /\$50/);
 });
 
 test("settled unified dashboard keeps the same region geometry as its skeleton at both font scales", () => {
@@ -429,18 +435,12 @@ test("settled unified dashboard keeps the same region geometry as its skeleton a
     const skeleton = GroupDashboard({ ...props, loading: true });
     const loaded = GroupDashboard({ ...props, loading: false });
     assert.deepEqual(skeleton.props.style, loaded.props.style);
-    // The currency subhead and its margin/gap occupy identical space.
-    const pendingSubhead = React.Children.toArray(skeleton.props.children)[0];
-    const loadedSubhead = React.Children.toArray(loaded.props.children)[0];
-    assert.deepEqual(flatten(pendingSubhead.props.style), flatten(loadedSubhead.props.style));
-    assert.equal(nodes(skeleton).filter(n => n.props?.testID === "group-stat-skeleton").length, 0);
+    assert.equal(React.Children.toArray(skeleton.props.children).length, 1);
+    assert.equal(React.Children.toArray(loaded.props.children).length, 1);
+    assert.ok(byId(skeleton, "group-position-placeholder"));
+    assert.doesNotMatch(text(skeleton), /You're even|All settled/);
+    assert.match(text(loaded), /You're even/);
     assert.doesNotMatch(text(loaded), /My spending|Group summary/);
-    // The reservation is an open settlement row; a settled result keeps the
-    // painted height as a floor (onLayout) so the ledger does not move up.
-    const reserved = byId(skeleton, "group-settlement-skeleton");
-    assert.equal(reserved.type, "View");
-    assert.equal(nodes(reserved).some(n => flatten(n.props?.style)?.minHeight === 48), true);
-    assert.ok(byId(loaded, "group-settled-inline"));
   }
 });
 
@@ -452,13 +452,14 @@ test("dashboard skeleton geometry survives member and currency hydration in eith
     const props = { balances: [], currentUserId: "me", loading: true };
     const geometry = tree => React.Children.toArray(tree.props.children).map(node => flatten(node.props.style));
     const firstFrame = geometry(GroupDashboard({ ...props, membersKnown: false, activeMemberCount: 0 }));
-    assert.equal(firstFrame.length, 2, "reserve the header and settlement line on first paint");
+    assert.equal(firstFrame.length, 1, "reserve one number placeholder on first paint");
     for (const activeMemberCount of [0, 1, 3]) {
       for (const groupSettings of [null, { enabled: false }, { enabled: true, settlementCurrency: "INR" }]) {
         preferences.groupSettings = groupSettings;
         const frame = GroupDashboard({ ...props, activeMemberCount });
         assert.deepEqual(geometry(frame), firstFrame);
-        assert.ok(byId(frame, "group-settlement-skeleton"));
+        assert.ok(byId(frame, "group-position-placeholder"));
+        assert.doesNotMatch(text(frame), /You're even|All settled/);
       }
     }
   }
@@ -476,12 +477,12 @@ test("known solo and non-unified groups have no unused rows during or after load
         const loaded = GroupDashboard({ ...props, loading: false });
         const pendingRows = React.Children.toArray(pending.props.children);
         const loadedRows = React.Children.toArray(loaded.props.children);
-        const expectedRows = activeMemberCount > 1 ? 1 + Number(enabled) : 0;
+        const expectedRows = activeMemberCount > 1 ? 1 : 0;
         assert.equal(pendingRows.length, expectedRows);
         assert.equal(loadedRows.length, expectedRows);
-        assert.deepEqual(pendingRows.map(row => flatten(row.props.style)), loadedRows.map(row => flatten(row.props.style)));
-        assert.equal(text(loaded).includes("In one currency"), enabled && activeMemberCount > 1);
-        assert.equal(text(loaded).includes("All settled"), activeMemberCount > 1);
+        assert.equal(text(loaded).includes("In one currency"), false);
+        assert.equal(text(loaded).includes("You're even"), activeMemberCount > 1);
+        assert.equal(text(pending).includes("You're even"), false);
       }
     }
   }
@@ -496,8 +497,10 @@ test("navigation unify flag predicts the header before local preferences hydrate
     preferences.groupSettings = { enabled: unifyBalances, settlementCurrency: "INR" };
     const loaded = GroupDashboard({ ...props, loading: false });
     const geometry = tree => React.Children.toArray(tree.props.children).map(row => flatten(row.props.style));
-    assert.deepEqual(geometry(pending), geometry(loaded));
-    assert.equal(geometry(pending).length, unifyBalances ? 2 : 1);
+    assert.equal(geometry(pending).length, 1);
+    assert.equal(geometry(loaded).length, 1);
+    assert.doesNotMatch(text(pending), /You're even/);
+    assert.match(text(loaded), /You're even/);
   }
 });
 
@@ -508,8 +511,9 @@ test("cached effective currency settings take precedence over stale navigation f
     const pending = GroupDashboard({ ...props, loading: true });
     const loaded = GroupDashboard({ ...props, loading: false });
     const geometry = tree => React.Children.toArray(tree.props.children).map(row => flatten(row.props.style));
-    assert.deepEqual(geometry(pending), geometry(loaded));
-    assert.equal(geometry(loaded).length, enabled ? 2 : 1);
+    assert.equal(geometry(pending).length, 1);
+    assert.equal(geometry(loaded).length, 1);
+    assert.match(text(loaded), /You're even/);
   }
 });
 
@@ -532,8 +536,8 @@ test("a cached multi-member prediction cannot leave empty slots after membership
   const stillPending = GroupDashboard({ ...props, activeMemberCount: 1, loading: true });
   const loaded = GroupDashboard({ ...props, activeMemberCount: 1, loading: false });
   const rows = tree => React.Children.toArray(tree.props.children).length;
-  assert.equal(rows(pending), 2);
-  assert.equal(rows(stillPending), 2);
+  assert.equal(rows(pending), 1);
+  assert.equal(rows(stillPending), 1);
   assert.equal(rows(loaded), 0);
   assert.doesNotMatch(text(loaded), /In one currency|All settled/);
 });
@@ -546,8 +550,8 @@ test("stale known-solo metadata does not hide real multi-member content after lo
   assert.equal(React.Children.toArray(pending.props.children).length, 0);
   assert.equal(React.Children.toArray(stillPending.props.children).length, 0);
   const loaded = GroupDashboard({ ...props, activeMemberCount: 3, loading: false });
-  assert.match(text(loaded), /In one currency/);
-  assert.match(text(loaded), /All settled/);
+  assert.match(text(loaded), /You're even/);
+  assert.doesNotMatch(text(pending), /You're even|All settled/);
 });
 
 test("App preserves unknown membership and GroupDetails resets predictions per group", () => {
@@ -722,34 +726,34 @@ test("GroupDetailsScreen wires balanceError and gates onSettlePress for active m
   assert.match(source, /if\s*\(\s*!isActiveMember\s*\|\|\s*balancesError\s*\)\s*return/);
 });
 
-test("GroupDetailsScreen wires independent dashboard and ledger skeletons", () => {
+test("GroupDetailsScreen paints a calm placeholder instead of skeleton stacks", () => {
   const source = readFileSync(path.join(__dirname, "../screens/GroupDetailsScreen.tsx"), "utf8");
-  assert.match(source, /loading=\{loadingTreatment\.showDashboardSkeleton\}/);
+  assert.match(source, /loading=\{balancesLoading && !balancesHasData\}/);
+  assert.match(source, /Loading balances…/);
+  assert.match(source, /Loading transactions…/);
   assert.match(source, /refreshing=\{loadingTreatment\.showRefreshControlLoader\}/);
   assert.match(source, /loadingTreatment\.showFooterLoader/);
-  assert.match(source, /<LedgerSkeleton \/>/);
-  assert.doesNotMatch(source, /quietLoading|Loading group details/);
+  assert.doesNotMatch(source, /<LedgerSkeleton|group-dashboard-skeleton|quietLoading|Loading group details/);
+  assert.match(source, /clearSavedGroupMoney|rememberGroupOpen/);
 });
 
-test("App prefetchGroupData fetches balances with include_stats for shared key", () => {
+test("App prefetchGroupData fetches balance before the first ledger page", () => {
   const source = readFileSync(path.join(__dirname, "../App.tsx"), "utf8");
-  assert.match(source, /prefetchGroupData/);
-  assert.match(source, /fetchBalances\(groupId,\s*true\)/);
-  assert.match(source, /queryKeys\.groupStats\(groupId\)/);
-  assert.doesNotMatch(
-    source,
-    /queryKey:\s*queryKeys\.balances\(groupId\),[\s\S]{0,80}queryFn:\s*\(\)\s*=>\s*fetchBalances\(groupId\)/
-  );
-  // Critical-path prefetch only — activity / last-currency must not contend on open.
   const prefetchBlock = source.match(
     /const prefetchGroupData = React\.useCallback\(\s*async \(groupId: string\) => \{[\s\S]*?\},\s*\[queryClientInstance\]\s*\)/
   );
   assert.ok(prefetchBlock, "prefetchGroupData block should exist");
-  assert.doesNotMatch(prefetchBlock[0], /activityQueryOptions|fetchActivityPage/);
-  assert.doesNotMatch(
-    prefetchBlock[0],
-    /fetchLatestGroupTransactionCurrency|fetchLatestGroupExpenseSplitAmong/
-  );
+  const block = prefetchBlock[0];
+  assert.match(block, /fetchBalances\(groupId,\s*false\)/);
+  assert.doesNotMatch(block, /fetchBalances\(groupId,\s*true\)/);
+  assert.doesNotMatch(block, /include_stats|groupStats/);
+  const balanceAt = block.indexOf("fetchBalances");
+  const ledgerAt = block.indexOf("fetchTransactionsPage");
+  assert.ok(balanceAt >= 0 && ledgerAt > balanceAt, "balance request precedes the ledger page");
+  assert.match(block, /fetchSettlements\(groupId\)/);
+  assert.doesNotMatch(block, /activityQueryOptions|fetchActivityPage/);
+  assert.doesNotMatch(block, /fetchLatestGroupTransactionCurrency|fetchLatestGroupExpenseSplitAmong/);
+  assert.match(source, /clearSavedGroupMoney/);
 });
 
 test("group details ready telemetry starts at navigation intent", () => {
@@ -764,10 +768,8 @@ test("group details ready telemetry starts at navigation intent", () => {
   assert.match(screen, /from_cache: timing\.from_cache/);
   assert.match(screen, /cache_status: timing\.cache_status/);
   // Dashboard / list must not wait on GET /groups/:id when list row is present.
-  assert.match(
-    screen,
-    /balancesLoading:\s*balancesLoading \|\| groupStatsLoading/
-  );
+  assert.match(screen, /balancesLoading,/);
+  assert.doesNotMatch(screen, /includeStats:\s*true/);
   assert.doesNotMatch(
     screen,
     /balancesLoading:\s*groupLoading \|\| balancesLoading/

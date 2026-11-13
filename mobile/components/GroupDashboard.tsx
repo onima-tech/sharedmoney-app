@@ -1,15 +1,14 @@
 import MaterialCommunityIcons from "@expo/vector-icons/MaterialCommunityIcons";
 import React, { useEffect, useMemo, useState } from "react";
-import { StyleSheet, useWindowDimensions, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import {
   Text,
   TouchableRipple,
   useTheme
 } from "react-native-paper";
-import { Skeleton, SkeletonGroup } from "./Skeleton";
 import { resolveGroupDashboardSlots } from "../utils/groupDashboardReservation";
+import { resolveGroupPosition } from "../utils/groupPosition";
 import { Balance, GroupStatsResponse, Participant } from "../types";
-import { UnifyPromptCard } from "./UnifyPromptCard";
 import { useCurrencyPreferences } from "../hooks/useCurrencyPreferences";
 import { getDefaultCurrency } from "../utils/currency";
 import {
@@ -64,6 +63,14 @@ interface GroupDashboardProps {
   onOpenCurrencySettings?: () => void;
   /** Retries the balances request from the number area. */
   onBalancesRetry?: () => void;
+  /** Opens the full counterparty list. Settle up and the sentence both use this. */
+  onOpenSettle?: () => void;
+  /** Text action beside Settle up, only when someone owes the viewer. */
+  onRemind?: () => void;
+  /** When true, the full counterparty list is open under the position. */
+  settleListOpen?: boolean;
+  /** One muted line after the calm wait. Omitted for the first 800ms. */
+  loadingLine?: string | null;
   /**
    * Non-former participant count (incl. people without accounts / pending invites).
    * Used for calm solo chrome vs settle slot visibility.
@@ -100,13 +107,16 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
   currentUserId,
   currentUserParticipantId,
   loading,
-  statsLoading = false,
   balanceError = false,
   defaultCurrency = getDefaultCurrency(),
   onSettlePress,
   onShareSummaryChange,
   onOpenCurrencySettings,
   onBalancesRetry,
+  onOpenSettle,
+  onRemind,
+  settleListOpen = false,
+  loadingLine = null,
   activeMemberCount = 2,
   membersKnown = true,
   hasNonZeroBalance = false,
@@ -114,12 +124,10 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
   unifyBalances: groupUnifyBalances,
 }) => {
   const theme = useTheme();
-  const { fontScale } = useWindowDimensions();
   const {
     preferredCurrency,
     groupSettings,
     rateBook,
-    setGroupSettings,
   } = useCurrencyPreferences(groupId);
   // Freeze the first-paint prediction: hydration must not resize the skeleton.
   // GroupDetails keys this component by group ID so another group gets a fresh prediction.
@@ -132,18 +140,7 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
       ? groupSettings.enabled && !!groupSettings.settlementCurrency
       : groupUnifyBalances,
   }));
-  const dashboardLoading = loading || statsLoading;
-  // Height the loading reservation actually painted; loaded content keeps it
-  // as a floor for this mount so a short "All settled" line cannot pull the ledger up.
-  const [reservedSettlementHeight, setReservedSettlementHeight] = useState(0);
-  // These minimums size visible content only. Frozen loading reservations must
-  // not leave blank slots when authoritative membership/preferences arrive.
-  const currencyHeaderStyle = [styles.unifiedSubhead, {
-    minHeight: theme.fonts.labelLarge.lineHeight * fontScale,
-  }];
-  const settlementSlotStyle = {
-    minHeight: Math.max(16, theme.fonts.bodySmall.lineHeight * fontScale) + 4,
-  };
+  const dashboardLoading = loading;
 
   const usedCurrencies = useMemo(
     () => collectCurrencies([...balances, ...currenciesFromGroupStats(groupStats)]),
@@ -205,22 +202,33 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
     })), settlementCurrency, rateBook);
   }, [balances, currentUserId, currentUserParticipantId, myDebts, unifyEnabled, settlementCurrency, rateBook]);
 
-  // Group net balances are not debts to the viewer. Use the same viewer-involved
-  // settlement edges as the unified view, retaining each edge's currency/amount.
-  const viewerBalances = useMemo(() => myDebts.map((edge): Balance => {
-    const isOwed = edge.toUser.user_id === currentUserId
-      || (!!currentUserParticipantId && edge.toUser.participant_id === currentUserParticipantId);
-    return {
-      ...(isOwed ? edge.fromUser : edge.toUser),
-      amount: isOwed ? edge.amount : -edge.amount,
-      currency: edge.currency,
-    };
-  }), [myDebts, currentUserId, currentUserParticipantId]);
+  const position = useMemo(() => resolveGroupPosition({
+    balances,
+    currentUserId,
+    currentUserParticipantId,
+    participants,
+    unifyEnabled,
+    settlementCurrency,
+    defaultCurrency,
+    rateBook,
+    activeMemberCount,
+    membersKnown,
+    hasNonZeroBalance,
+  }), [
+    activeMemberCount,
+    balances,
+    currentUserId,
+    currentUserParticipantId,
+    defaultCurrency,
+    hasNonZeroBalance,
+    membersKnown,
+    participants,
+    rateBook,
+    settlementCurrency,
+    unifyEnabled,
+  ]);
 
-  const settlementRows = useMemo(
-    () => viewerBalances.filter((balance) => Math.abs(balance.amount) >= 0.005),
-    [viewerBalances],
-  );
+  const settlementRows = position.kind === "ready" ? position.rows : [];
 
 
   const formatSignedBalance = (amount: number, currency: string, isOwed: boolean) => {
@@ -294,27 +302,6 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
   }, [onShareSummaryChange, shareSummaryMessage]);
 
   const renderSettlementRows = () => {
-    if (balanceError) {
-      return (
-        <View style={styles.settlementStatus} testID="balances-error-line">
-          <Text accessibilityLiveRegion="polite" variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-            Couldn’t load balances
-            {" · "}
-            <Text
-              variant="bodySmall"
-              onPress={onBalancesRetry}
-              accessibilityRole="button"
-              accessibilityLabel="Retry loading balances"
-              testID="balances-error-retry"
-              style={{ color: theme.colors.primary, fontWeight: "600" }}
-            >
-              Retry
-            </Text>
-          </Text>
-        </View>
-      );
-    }
-
     if (settlementRows.length === 0) {
       if (unifyEnabled && myUnified && myUnified.missing.length > 0) {
         return (
@@ -325,14 +312,7 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
           </View>
         );
       }
-      return (
-        <View style={styles.settledInline} testID="group-settled-inline">
-          <MaterialCommunityIcons name="check-circle-outline" size={16} color={theme.colors.onSurfaceVariant} accessible={false} />
-          <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
-            All settled
-          </Text>
-        </View>
-      );
+      return null;
     }
 
     return settlementRows.map((balance, index) => {
@@ -476,68 +456,123 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
   };
 
   if ((dashboardLoading || !currentUserId) && !balanceError) {
+    if (!reservation.settlement) {
+      return <View style={styles.container} />;
+    }
     return (
-      <SkeletonGroup style={styles.container} testID="group-dashboard-skeleton">
-        {reservation.currencyHeader ? <View style={currencyHeaderStyle}>
-          <Skeleton width="48%" height={12} />
-          <Skeleton width={48} height={14} />
-        </View> : null}
-        {reservation.settlement ? <View style={settlementSlotStyle}
-          onLayout={(e) => setReservedSettlementHeight(e.nativeEvent.layout.height)}>
-          {/* Mirrors the outstanding-balance card so loaded debts do not push the ledger. */}
-          <View testID="group-settlement-skeleton" style={styles.settlementList}>
-            <View style={[styles.settlementRow, { borderBottomColor: theme.colors.outlineVariant }]}>
-              <View style={styles.settlementRowContent}>
-                <View style={[styles.settlementDetails, { justifyContent: "space-between" }]}>
-                  <Skeleton width={104} height={14} />
-                  <Skeleton width={72} height={16} />
-                </View>
-              </View>
-            </View>
-          </View>
-        </View> : null}
-      </SkeletonGroup>
+      <View style={styles.container} testID="group-position-placeholder">
+        <View style={styles.numberPlaceholder} />
+        {loadingLine ? (
+          <Text
+            variant="bodySmall"
+            testID="group-position-loading-line"
+            style={{ color: theme.colors.onSurfaceVariant }}
+          >
+            {loadingLine}
+          </Text>
+        ) : null}
+      </View>
     );
+  }
+
+  if (balanceError) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.settlementStatus} testID="group-settlement-rows">
+          <Text accessibilityLiveRegion="polite" variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }} testID="balances-error-line">
+            Couldn’t load balances
+            {" · "}
+            <Text
+              variant="bodySmall"
+              onPress={onBalancesRetry}
+              accessibilityRole="button"
+              accessibilityLabel="Retry loading balances"
+              testID="balances-error-retry"
+              style={{ color: theme.colors.primary, fontWeight: "600" }}
+            >
+              Retry
+            </Text>
+          </Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!contentSlots.settlement || position.kind === "hidden") {
+    return <View style={styles.container} />;
   }
 
   return (
     <View style={styles.container}>
-      {hasMultipleCurrencies && !unifyEnabled && !balanceError && !dashboardLoading ? (
-        <UnifyPromptCard
-          currencies={usedCurrencies}
-          suggestedCurrency={settlementCurrency}
-          onEnable={() => {
-            if (!groupId) {
-              onOpenCurrencySettings?.();
-              return;
-            }
-            void setGroupSettings(groupId, {
-              enabled: true,
-              settlementCurrency,
-            });
-          }}
-          onChooseCurrency={onOpenCurrencySettings}
-        />
+      <View testID="group-position" style={styles.positionBlock}>
+        {position.label ? (
+          <Text
+            variant="bodyMedium"
+            testID="group-position-label"
+            style={{ color: theme.colors.onSurfaceVariant }}
+          >
+            {position.label}
+          </Text>
+        ) : null}
+        {position.numberText ? (
+          <Text testID="group-position-number" style={styles.positionNumber}>
+            {position.numberText}
+          </Text>
+        ) : null}
+        {position.showUnifyLine ? (
+          <Text
+            variant="bodySmall"
+            testID="group-position-unify"
+            onPress={onOpenCurrencySettings}
+            accessibilityRole="button"
+            style={{ color: theme.colors.onSurfaceVariant }}
+          >
+            Show in one currency ›
+          </Text>
+        ) : null}
+        {position.sentence ? (
+          <Text
+            variant="bodySmall"
+            testID="group-position-sentence"
+            onPress={onOpenSettle}
+            accessibilityRole={onOpenSettle ? "button" : undefined}
+            style={{ color: theme.colors.onSurface }}
+          >
+            {position.sentence}
+          </Text>
+        ) : null}
+        {position.showSettle ? (
+          <View style={styles.actionRow}>
+            <TouchableRipple
+              testID="settle-up-button"
+              onPress={onOpenSettle}
+              accessibilityRole="button"
+              accessibilityLabel="Settle up"
+              style={[styles.settleButton, { backgroundColor: theme.colors.primary }]}
+            >
+              <Text style={{ color: theme.colors.onPrimary, fontWeight: "600" }}>Settle up</Text>
+            </TouchableRipple>
+            {position.showRemind && onRemind ? (
+              <Text
+                testID="remind-button"
+                onPress={onRemind}
+                accessibilityRole="button"
+                style={{ color: theme.colors.primary, fontWeight: "600", marginLeft: 16 }}
+              >
+                Remind
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+      </View>
+
+      {settleListOpen && settlementRows.length > 0 ? (
+        <View style={styles.settlementList} testID="group-settlement-rows">
+          {renderSettlementRows()}
+        </View>
       ) : null}
 
-      {contentSlots.currencyHeader ? <View style={currencyHeaderStyle}>
-        <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>
-          {`In one currency · ${settlementCurrency}`}
-        </Text>
-      </View> : null}
-
-      {contentSlots.settlement ? <View style={[settlementSlotStyle,
-        reservedSettlementHeight > 0 ? { minHeight: reservedSettlementHeight } : null]}>
-        {isSettled ? (
-          <View testID="group-settlement-rows">{renderSettlementRows()}</View>
-        ) : (
-          <View style={styles.settlementList} testID="group-settlement-rows">
-            {renderSettlementRows()}
-          </View>
-        )}
-      </View> : null}
-
-      {unifyEnabled && !balanceError && !dashboardLoading && showSettleChrome && myUnified && myUnified.missing.length > 0 && settlementRows.length > 0 ? (
+      {unifyEnabled && showSettleChrome && myUnified && myUnified.missing.length > 0 && settlementRows.length > 0 ? (
         <Text
           variant="labelSmall"
           style={{ color: theme.colors.error, marginTop: -8, marginHorizontal: 4 }}
@@ -564,6 +599,34 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: -4,
+  },
+  positionBlock: {
+    gap: 2,
+  },
+  positionNumber: {
+    fontSize: 40,
+    lineHeight: 48,
+    fontWeight: "700",
+    letterSpacing: -0.8,
+  },
+  numberPlaceholder: {
+    width: 148,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: "rgba(0,0,0,0.06)",
+    marginTop: 6,
+  },
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 12,
+  },
+  settleButton: {
+    minHeight: 40,
+    paddingHorizontal: 22,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
   },
   settlementList: {
     overflow: "hidden",

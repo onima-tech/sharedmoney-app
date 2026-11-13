@@ -14,6 +14,7 @@ export type DevPreviewKind =
   | "bill-dead"
   | "bill-offline"
   | "groups-phase1"
+  | "groups-phase2"
   | null;
 
 const PREVIEW_QUERY_VALUES = new Set([
@@ -24,6 +25,7 @@ const PREVIEW_QUERY_VALUES = new Set([
   "bill-dead",
   "bill-offline",
   "groups-phase1",
+  "groups-phase2",
 ]);
 
 function previewFromPath(haystack: string): DevPreviewKind {
@@ -47,6 +49,9 @@ function previewFromPath(haystack: string): DevPreviewKind {
   }
   if (haystack.includes("dev/groups-phase1") || haystack.includes("dev-groups-phase1")) {
     return "groups-phase1";
+  }
+  if (haystack.includes("dev/groups-phase2") || haystack.includes("dev-groups-phase2")) {
+    return "groups-phase2";
   }
   return null;
 }

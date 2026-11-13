@@ -225,8 +225,12 @@ export function useGroupLastExpenseSplitAmong(groupId?: string | null) {
   });
 }
 
-export function useTransactions(groupId?: string | null) {
+export function useTransactions(
+  groupId?: string | null,
+  options?: { enabled?: boolean },
+) {
   const { user } = useAuth();
+  const enabledOption = options?.enabled;
 
   const query = useInfiniteQuery({
     queryKey: groupId ? queryKeys.transactionsFeed(groupId) : queryKeys.transactionsFeed(""),
@@ -236,7 +240,9 @@ export function useTransactions(groupId?: string | null) {
     getNextPageParam: (lastPage) => (
       lastPage?.has_more && lastPage?.next_cursor ? lastPage.next_cursor : null
     ),
-    enabled: !!user?.id && (!!groupId || groupId === null || groupId === undefined),
+    enabled: !!user?.id
+      && enabledOption !== false
+      && (!!groupId || groupId === null || groupId === undefined),
     staleTime: 30_000,
   });
 

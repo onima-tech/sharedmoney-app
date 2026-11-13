@@ -1,6 +1,7 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
-  ActivityIndicator as RNActivityIndicator,
   Alert,
   BackHandler,
   FlatList,
@@ -41,7 +42,6 @@ import { SafetyAction, SafetyActionModal } from "../components/SafetyActionModal
 import {
   LedgerDateLabel,
   LedgerRow,
-  LedgerSkeleton,
   TransactionsEmptyState,
 } from "../components/TransactionsSection";
 import { useAuth } from "../contexts/AuthContext";
@@ -50,6 +50,7 @@ import { SCREEN_TRANSITION_MS } from "../constants/layout";
 import { useActivity } from "../hooks/useActivity";
 import { useKeyboardOverlap } from "../hooks/useKeyboardOverlap";
 import { useBalances } from "../hooks/useBalances";
+import { queryKeys } from "../hooks/queryKeys";
 import {
   useCancelInvitation,
   useGroupInvitations,
@@ -167,14 +168,20 @@ import { captureIdentifiedAnalyticsEvent } from "../utils/posthogAnalytics";
 import { ANALYTICS_EVENTS } from "../utils/posthogEvents";
 import { GroupStatsMode } from "./GroupStatsScreen";
 import { SettlementFormScreen } from "./SettlementFormScreen";
+import { TransactionDetailScreen } from "./TransactionDetailScreen";
+import { resolveGroupPosition } from "../utils/groupPosition";
+import { hydrateGroupOpenCache, rememberGroupOpen, seedGroupOpenQueries } from "../utils/groupOpenCache";
 
 type GroupDetailsListRow =
   | { kind: "section"; key: string; label: string }
   | { kind: "ledger"; key: string; item: LedgerItem }
   | { kind: "activity"; key: string; entry: ActivityFeedEntry };
 
-/** Room under the last row so the Add expense pill never covers it. */
-const LEDGER_FAB_INSET = 112;
+/**
+ * Room under the last row so the Add expense pill never covers it.
+ * Tall enough that a settle list can scroll Dinner and the day header clear.
+ */
+const LEDGER_FAB_INSET = 176;
 
 interface GroupDetailsScreenProps {
   group: GroupWithMembers;
@@ -242,6 +249,14 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [searchFilter, setSearchFilter] = useState<TransactionSearchFilter>("all");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [settleListOpen, setSettleListOpen] = useState(false);
+  const [compactHeader, setCompactHeader] = useState(false);
+  const [detailItem, setDetailItem] = useState<
+    | { kind: "expense"; transaction: Transaction }
+    | { kind: "payment"; settlement: Settlement }
+    | null
+  >(null);
+  const [calmReady, setCalmReady] = useState(false);
   const [showActivityFilters, setShowActivityFilters] = useState(false);
   const [activityFilterType, setActivityFilterType] = useState<"all" | "expenses" | "settlements">("all");
   const [activityFilterParticipantId, setActivityFilterParticipantId] = useState<string>("all");
@@ -291,7 +306,15 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   // Real-time synchronization: listen for remote transactions/settlements
   useRealtimeGroupSync(initialGroup.id);
 
-  // Fetch data with hooks
+  const { session, signOut } = useAuth();
+  const queryClient = useQueryClient();
+  const seededGroupRef = React.useRef<string | null>(null);
+  if (session?.user?.id && seededGroupRef.current !== initialGroup.id) {
+    seededGroupRef.current = initialGroup.id;
+    seedGroupOpenQueries(queryClient, session.user.id, initialGroup.id);
+  }
+
+  // Balance first. The ledger, participants, and history wait until it settles.
   const {
     data: groupData,
     isLoading: groupLoading,
@@ -299,13 +322,22 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     refetch: refetchGroup,
   } = useGroupDetails(initialGroup.id);
   const {
+    data: balancesData,
+    hasData: balancesHasData,
+    isLoading: balancesLoading,
+    isFetching: balancesFetching,
+    error: balancesError,
+    refetch: refetchBalances,
+  } = useBalances(initialGroup.id);
+  const ledgerEnabled = !balancesFetching && (balancesHasData || !!balancesError);
+  const {
     data: txData,
     isLoading: txLoading,
     hasNextPage: txHasNextPage,
     isFetchingNextPage: txIsFetchingNextPage,
     fetchNextPage: fetchNextTransactionsPage,
     refetch: refetchTx,
-  } = useTransactions(initialGroup.id);
+  } = useTransactions(initialGroup.id, { enabled: ledgerEnabled });
   // Keep this group's latest-entered currency and split-among cached while the screen is open.
   useGroupLastTransactionCurrency(initialGroup.id);
   useGroupLastExpenseSplitAmong(initialGroup.id);
@@ -322,21 +354,12 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     data: participants = [],
     isLoading: participantsLoading,
     refetch: refetchParticipants,
-  } = useParticipants(initialGroup.id);
-  // Single /balances?include_stats=true — avoids duplicate balances+stats fan-out
-  const {
-    data: balancesData,
-    groupStats,
-    isLoading: balancesLoading,
-    error: balancesError,
-    refetch: refetchBalances,
-  } = useBalances(initialGroup.id, { includeStats: true });
-  const groupStatsLoading = balancesLoading;
+  } = useParticipants(initialGroup.id, { enabled: ledgerEnabled });
   const {
     data: settlementsData,
     isLoading: settlementsLoading,
     refetch: refetchSettlements,
-  } = useSettlements(initialGroup.id);
+  } = useSettlements(initialGroup.id, { enabled: ledgerEnabled });
   const {
     data: activityData,
     isLoading: activityLoading,
@@ -356,7 +379,6 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   const [cancellingInvitationId, setCancellingInvitationId] = useState<
     string | null
   >(null);
-  const { session, signOut } = useAuth();
   const { data: profile } = useProfile();
   const viewerShareName = settleSharePersonName({
     full_name: profile?.full_name,
@@ -545,6 +567,10 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   // History opened from the overflow returns to the ledger. A notification
   // that opened History still leaves the group.
   const handleChromeBack = useCallback(() => {
+    if (detailItem) {
+      setDetailItem(null);
+      return;
+    }
     if (showMembers) {
       setShowMembers(false);
       return;
@@ -555,7 +581,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
       return;
     }
     onBack();
-  }, [historyFromMenu, listMode, onBack, showMembers]);
+  }, [detailItem, historyFromMenu, listMode, onBack, showMembers]);
 
   // Handle Android hardware back button. Skip while another screen is covering
   // this one so the overlay (e.g. transaction form) owns the back press.
@@ -635,6 +661,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   // API already filters by group_id, so no need for client-side filtering
   const transactions = txData;
   const settlements = settlementsData?.settlements ?? [];
+  const ledgerPending = !ledgerEnabled && transactions.length === 0;
   const viewerUserId = session?.user?.id ?? null;
   const viewerParticipantId = participants.find((person) => person.user_id === viewerUserId)?.id ?? null;
   const searchEngaged = searchOpen || searchQuery.trim().length > 0 || searchFilter !== "all";
@@ -1580,6 +1607,95 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   const hasNonZeroBalance = groupBalances.some(
     (balance) => Math.abs(balance.amount) >= 0.005,
   );
+  const position = useMemo(() => resolveGroupPosition({
+    balances: groupBalances,
+    currentUserId: session?.user?.id,
+    currentUserParticipantId: participants.find((person) => person.user_id === session?.user?.id)?.id,
+    participants,
+    unifyEnabled: groupSettings?.enabled === true && !!groupSettings.settlementCurrency,
+    settlementCurrency: groupSettings?.settlementCurrency || preferredCurrency || getDefaultCurrency(),
+    defaultCurrency: getDefaultCurrency(),
+    rateBook,
+    activeMemberCount: settleAudienceCount,
+    membersKnown: group.members !== undefined && (!participantsLoading || participants.length > 0),
+    hasNonZeroBalance,
+  }), [
+    group.members,
+    groupBalances,
+    groupSettings,
+    hasNonZeroBalance,
+    participants,
+    participantsLoading,
+    preferredCurrency,
+    rateBook,
+    session?.user?.id,
+    settleAudienceCount,
+  ]);
+  const positionKnown = balancesHasData && !balancesError;
+  const settleVisible = positionKnown && position.kind === "ready" && position.showSettle;
+  const remindBalance = position.kind === "ready"
+    ? position.rows.find((row) => row.amount > 0.005) ?? null
+    : null;
+
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    if (seedGroupOpenQueries(queryClient, userId, initialGroup.id)) return;
+    let cancelled = false;
+    void hydrateGroupOpenCache(userId, AsyncStorage).then(() => {
+      if (!cancelled) seedGroupOpenQueries(queryClient, userId, initialGroup.id);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [initialGroup.id, queryClient, session?.user?.id]);
+
+  useEffect(() => {
+    setCalmReady(false);
+    setSettleListOpen(false);
+    setCompactHeader(false);
+    setDetailItem(null);
+    const timer = setTimeout(() => setCalmReady(true), 800);
+    return () => clearTimeout(timer);
+  }, [initialGroup.id]);
+
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId || !ledgerEnabled || balancesError || !balancesHasData) return;
+    if (txLoading || settlementsLoading || participantsLoading) return;
+    const feed = queryClient.getQueryData<{
+      pages?: { items: Transaction[]; has_more: boolean; next_cursor: { date: string; id: number } | null }[];
+    }>(queryKeys.transactionsFeed(initialGroup.id));
+    const page = feed?.pages?.[0];
+    if (!page) return;
+    void rememberGroupOpen(AsyncStorage, userId, {
+      groupId: initialGroup.id,
+      savedAt: new Date().toISOString(),
+      balances: balancesData,
+      ledger: {
+        transactions: {
+          items: page.items,
+          has_more: page.has_more === true,
+          next_cursor: page.next_cursor ?? null,
+        },
+        settlements,
+      },
+      participants,
+    });
+  }, [
+    balancesData,
+    balancesError,
+    balancesHasData,
+    initialGroup.id,
+    ledgerEnabled,
+    participants,
+    participantsLoading,
+    queryClient,
+    session?.user?.id,
+    settlements,
+    settlementsLoading,
+    txLoading,
+  ]);
   const ledgerIsEmpty =
     !txLoading &&
     !settlementsLoading &&
@@ -1589,12 +1705,14 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   // (initialGroup) already has name/settings, and membership falls back to
   // user_status until members arrive.
   const listDataLoading =
-    listMode === "transactions" ? txLoading || settlementsLoading : activityLoading;
+    listMode === "transactions"
+      ? ledgerPending || txLoading || settlementsLoading
+      : activityLoading;
   const listContentEmpty = listRows.length === 0;
   const fetchingNextPage =
     listMode === "transactions" ? txIsFetchingNextPage : activityFetchingNextPage;
   const loadingTreatment = resolveGroupDetailsLoadingTreatment({
-    balancesLoading: balancesLoading || groupStatsLoading,
+    balancesLoading,
     balancesError: !!balancesError,
     listDataLoading,
     listContentEmpty,
@@ -1602,6 +1720,12 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     fetchingNextPage,
   });
   const groupOpenShellLoading = loadingTreatment.showListInitialLoader;
+  const showBalanceLine = calmReady && !balancesHasData && balancesLoading && !balancesError;
+  const showLedgerLine = calmReady
+    && !showBalanceLine
+    && groupOpenShellLoading
+    && transactions.length === 0
+    && listMode === "transactions";
   const preferAddPeopleFab = shouldPreferAddPeopleFab(
     activeMemberCount,
     ledgerIsEmpty,
@@ -1798,6 +1922,28 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     );
   }
 
+  if (detailItem) {
+    return (
+      <TransactionDetailScreen
+        transaction={detailItem.kind === "expense" ? detailItem.transaction : null}
+        settlement={detailItem.kind === "payment" ? detailItem.settlement : null}
+        groupId={group.id}
+        viewerUserId={session?.user?.id}
+        viewerParticipantId={participants.find((person) => person.user_id === session?.user?.id)?.id}
+        participants={participants}
+        members={group.members || []}
+        unifyEnabled={groupSettings?.enabled === true && !!groupSettings.settlementCurrency}
+        settlementCurrency={groupSettings?.settlementCurrency}
+        rateBook={rateBook}
+        onBack={() => setDetailItem(null)}
+        onEdit={isActiveMember ? () => {
+          if (detailItem.kind === "expense") onEditTransaction(detailItem.transaction);
+          else handleEditSettlement(detailItem.settlement);
+        } : undefined}
+      />
+    );
+  }
+
   return (
     <View
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -1979,6 +2125,25 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
           </Menu>
         )}
       </Appbar.Header>
+      {!showMembers && listMode === "transactions" && compactHeader && !searchEngaged && positionKnown && position.kind === "ready" && position.compactLine ? (
+        <Text
+          variant="bodySmall"
+          testID="group-compact-line"
+          accessibilityRole={position.showSettle || position.showUnifyLine ? "button" : undefined}
+          accessibilityLabel={position.compactLine}
+          onPress={position.showUnifyLine
+            ? () => setShowCurrencySettings(true)
+            : position.showSettle
+              ? () => {
+                setSettleListOpen(true);
+                mainListRef.current?.scrollToOffset({ offset: 0, animated: true });
+              }
+              : undefined}
+          style={{ color: theme.colors.onSurfaceVariant, paddingHorizontal: 16, marginTop: -4, marginBottom: 4 }}
+        >
+          {position.compactLine}
+        </Text>
+      ) : null}
 
       {/* Banner for former members */}
       {!isActiveMember && isMember && !showMembers && (
@@ -2051,6 +2216,11 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
           data={listRows}
           keyExtractor={(row) => row.key}
           showsVerticalScrollIndicator={false}
+          onScroll={(event) => {
+            const next = event.nativeEvent.contentOffset.y > 72;
+            setCompactHeader((current) => (current === next ? current : next));
+          }}
+          scrollEventThrottle={16}
           onScrollBeginDrag={handleMainScrollBeginDrag}
           onScrollEndDrag={handleScrollEndDrag}
           onMomentumScrollEnd={handleMomentumScrollEnd}
@@ -2080,12 +2250,14 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
                 groupLink={getGroupLinkUrl(group.id)}
                 viewerShareName={viewerShareName}
                 balances={groupBalances}
-                groupStats={groupStats}
                 currentUserId={session?.user?.id}
                 currentUserParticipantId={participants.find((p) => p.user_id === session?.user?.id)?.id}
-                loading={loadingTreatment.showDashboardSkeleton}
-                statsLoading={groupStatsLoading}
+                loading={balancesLoading && !balancesHasData}
                 defaultCurrency={getDefaultCurrency()}
+                settleListOpen={settleListOpen}
+                loadingLine={showBalanceLine ? "Loading balances…" : null}
+                onOpenSettle={() => setSettleListOpen(true)}
+                onRemind={remindBalance ? () => handleRemindBalance(remindBalance) : undefined}
                 activeMemberCount={settleAudienceCount}
                 membersKnown={
                   group.members !== undefined
@@ -2280,6 +2452,8 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
                     participants={participants}
                     highlightedTransactionId={visibleHighlightedTransactionId}
                     onHighlightedInteraction={clearVisibleTransactionHighlight}
+                    onOpenExpense={(transaction) => setDetailItem({ kind: "expense", transaction })}
+                    onOpenPayment={(settlement) => setDetailItem({ kind: "payment", settlement })}
                     onEditExpense={isActiveMember ? onEditTransaction : () => {}}
                     onEditPayment={
                       isActiveMember
@@ -2328,9 +2502,15 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
                 >
                   {SEARCHING_TRANSACTIONS_LINE}
                 </Text>
-              ) : groupOpenShellLoading ? (
-                <LedgerSkeleton />
-              ) : searchEngaged && loadingTreatment.showListEmptyState ? (
+              ) : showLedgerLine ? (
+                <Text
+                  variant="bodyMedium"
+                  testID="group-ledger-loading-line"
+                  style={{ color: theme.colors.onSurfaceVariant, paddingHorizontal: 16, paddingVertical: 20 }}
+                >
+                  Loading transactions…
+                </Text>
+              ) : groupOpenShellLoading ? null : searchEngaged && loadingTreatment.showListEmptyState ? (
                 <View style={{ paddingHorizontal: 16, paddingVertical: 20, flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
                   <Text variant="bodyMedium" style={{ color: theme.colors.onSurface }} testID="transaction-search-empty">
                     {transactionSearchEmptyMessage(transactionSearchTerm(
@@ -2361,7 +2541,12 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
                 </View>
               ) : null
             ) : groupOpenShellLoading ? (
-              <LedgerSkeleton />
+              <Text
+                variant="bodyMedium"
+                style={{ color: theme.colors.onSurfaceVariant, paddingHorizontal: 16, paddingVertical: 20 }}
+              >
+                Loading history…
+              </Text>
             ) : loadingTreatment.showListEmptyState ? (
               <View style={{ paddingHorizontal: 16 }}>
                 <ActivityFeedEmptyState
@@ -2376,7 +2561,9 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
           ListFooterComponent={
             <View style={{ alignItems: "center", paddingTop: 8, paddingBottom: showGroupFab ? 8 : 24 }}>
               {loadingTreatment.showFooterLoader ? (
-                <RNActivityIndicator size="small" />
+                <Text variant="bodySmall" style={{ color: theme.colors.onSurfaceVariant }}>
+                  Loading earlier…
+                </Text>
               ) : null}
             </View>
           }
@@ -2389,9 +2576,13 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
           icon={preferAddPeopleFab ? "account-plus" : "plus"}
           style={[
             styles.fab,
-            { backgroundColor: theme.colors.primary },
+            {
+              backgroundColor: settleVisible
+                ? theme.colors.secondaryContainer
+                : theme.colors.primary,
+            },
           ]}
-          color={theme.colors.onPrimary}
+          color={settleVisible ? theme.colors.onSecondaryContainer : theme.colors.onPrimary}
           onPress={preferAddPeopleFab ? onAddMember : onAddTransaction}
           label={preferAddPeopleFab ? "Add people" : "Add expense"}
           accessibilityLabel={preferAddPeopleFab ? "Add people" : "Add expense"}
