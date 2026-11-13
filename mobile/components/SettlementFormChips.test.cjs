@@ -7,7 +7,7 @@ const React = require("react");
 
 function loadSettlementFormScreen(theme = { colors: { primary: "#1F5EFF", primaryContainer: "#DCE6FF", onPrimaryContainer: "#123A99", surfaceVariant: "#EEF2F7", surface: "#fff", onSurface: "#17202A", onSurfaceVariant: "#5B6776", outline: "#C9D2DF", error: "#B42318", onError: "#fff" } }) {
   const cache = new Map();
-  const paper = Object.fromEntries(["ActivityIndicator", "Button", "Chip", "Dialog", "Divider", "Portal", "Surface", "Text", "TextInput", "TouchableRipple"].map(name => [name, name]));
+  const paper = Object.fromEntries(["ActivityIndicator", "Button", "Chip", "Dialog", "Divider", "Icon", "Portal", "Surface", "Text", "TextInput", "TouchableRipple"].map(name => [name, name]));
   paper.Appbar = { Header: "Appbar.Header", Content: "Appbar.Content", Action: "Appbar.Action", BackAction: "Appbar.BackAction" };
   paper.Dialog = Object.assign("Dialog", { Title: "Dialog.Title", Content: "Dialog.Content", Actions: "Dialog.Actions" });
   paper.Portal = "Portal";
@@ -45,6 +45,7 @@ function loadSettlementFormScreen(theme = { colors: { primary: "#1F5EFF", primar
           if (!(i in stateList)) stateList[i] = typeof initial === "function" ? initial() : initial;
           return [stateList[i], (val) => { stateList[i] = typeof val === "function" ? val(stateList[i]) : val; }];
         },
+        useRef: (initial) => ({ current: initial }),
         useEffect: (fn, deps) => {
           const i = effectCursor++;
           const prev = effectDeps[i];
@@ -77,6 +78,19 @@ function loadSettlementFormScreen(theme = { colors: { primary: "#1F5EFF", primar
       if (id === "react-native-paper") return paper;
       if (id === "react-native-safe-area-context") return { useSafeAreaInsets: () => ({ top: 0, bottom: 0, left: 0, right: 0 }) };
       if (id === "@react-native-community/datetimepicker") return "DateTimePicker";
+      if (id.endsWith("/Skeleton") || id === "./Skeleton") {
+        return { Skeleton: "Skeleton", SkeletonGroup: "SkeletonGroup" };
+      }
+      if (id.endsWith("/UpiQrCode") || id === "./UpiQrCode") return { UpiQrCode: "UpiQrCode" };
+      if (id.endsWith("/useUserProfiles")) {
+        return { useUserProfiles: () => ({ data: new Map(), isLoading: false }) };
+      }
+      if (id.endsWith("/posthogAnalytics")) {
+        return { captureIdentifiedAnalyticsEvent: () => {} };
+      }
+      if (id === "posthog-react-native" || id === "@react-native-async-storage/async-storage") {
+        return {};
+      }
       if (id.startsWith(".")) {
         const resolved = path.resolve(path.dirname(filename), id);
         return load(existsSync(resolved) ? resolved : `${resolved}.ts`);
@@ -195,7 +209,7 @@ test("manual creation mode renders fixed You payer and wrapping To participant c
   assert.equal(parent.props.style?.flexDirection, "row");
 });
 
-test("duplicate participant names are disambiguated with id, never raw email", () => {
+test("duplicate single names use the email local part, never a raw email", () => {
   const groupMembers = [
     { user_id: "me", participant_id: "p_me", full_name: "Alex", email: "alex1@example.com" },
     { user_id: "u_alex2", participant_id: "p_alex2", full_name: "Alex", email: "alex2@example.com" },
@@ -213,7 +227,8 @@ test("duplicate participant names are disambiguated with id, never raw email", (
   });
 
   const chip = byId(tree, "settlement-to-p_alex2");
-  assert.match(text(chip), /Alex · p_alex2/);
+  assert.match(text(chip), /alex2/);
+  assert.doesNotMatch(text(chip), /p_alex2/);
   assert.doesNotMatch(text(tree), /alex2@example\.com/);
 });
 
@@ -257,9 +272,9 @@ test("edit mode provides selectable From and To single-select chips preserving r
   assert.equal(Boolean(toBob.props.disabled), false);
   assert.equal(Boolean(fromMe.props.disabled), false);
 
-  // Current user label has (You)
-  assert.match(text(fromMe), /Alice \(You\)/);
-  assert.match(text(toMe), /Alice \(You\)/);
+  // Current user stays You
+  assert.equal(text(fromMe), "You");
+  assert.equal(text(toMe), "You");
 });
 
 test("obligation mode fixes parties and does not expose participant selectors", () => {
@@ -346,7 +361,7 @@ test("obligation header uses email local-part and grouped whole-amount prefill",
   assert.equal(saveCalls[0].amount, 30000);
 });
 
-test("you-owe header capitalizes You at sentence start and keeps full name + decimals", () => {
+test("you-owe header capitalizes You at sentence start and keeps the short name + decimals", () => {
   const groupMembers = [
     { user_id: "me", participant_id: "p_me", full_name: "Alice", email: "alice@example.com" },
     { user_id: "u_bob", participant_id: "p_bob", full_name: "Bob Smith", email: "bob@example.com" },
@@ -373,7 +388,7 @@ test("you-owe header capitalizes You at sentence start and keeps full name + dec
   });
 
   assert.equal(byId(tree, "settlement-paid-from").props.children, "You");
-  assert.equal(byId(tree, "settlement-paid-to").props.children, "Bob Smith");
+  assert.equal(byId(tree, "settlement-paid-to").props.children, "Bob");
   assert.equal(byId(tree, "settlement-paid-from").props.style.flexGrow, 0);
   assert.equal(byId(tree, "settlement-paid-from").props.style.flexShrink, 0);
   assert.equal(byId(tree, "settlement-paid-to").props.style.flexGrow, 0);
@@ -458,7 +473,7 @@ test("long counterparty name ellipsizes; paid you stays visible", () => {
 
   const from = byId(tree, "settlement-paid-from");
   const to = byId(tree, "settlement-paid-to");
-  assert.equal(from.props.children, "Christopher Fernandes");
+  assert.equal(from.props.children, "Christopher");
   assert.equal(from.props.numberOfLines, 1);
   assert.equal(from.props.ellipsizeMode, "tail");
   assert.equal(from.props.style.flexGrow, 0);
@@ -469,6 +484,32 @@ test("long counterparty name ellipsizes; paid you stays visible", () => {
   assert.equal(byId(tree, "settlement-paid-header").props.style.justifyContent, "center");
   assert.doesNotMatch(text(tree), /chris@test\.com/);
   assert.equal(text(byId(tree, "settlement-header-amount")), "₹500");
+});
+
+test("settle-up header and chips disambiguate two Christophers", () => {
+  const groupMembers = [
+    { user_id: "me", participant_id: "p_me", full_name: "Asha Rao", email: "asha@example.com" },
+    { user_id: "u_cf", participant_id: "p_cf", full_name: "Christopher Fernandez", email: "cf@example.com" },
+    { user_id: "u_cm", participant_id: "p_cm", full_name: "Christopher Mills", email: "cm@example.com" },
+  ];
+  const tree = SettlementForm({
+    visible: true,
+    balance: {
+      user_id: "u_cf",
+      participant_id: "p_cf",
+      full_name: "Christopher Fernandez",
+      amount: 500,
+      currency: "INR",
+    },
+    settlement: null,
+    groupMembers,
+    currentUserId: "me",
+    groupId: "g1",
+    onSave: async () => {},
+    onDismiss: () => {},
+  });
+  assert.equal(byId(tree, "settlement-paid-from").props.children, "Christopher F.");
+  assert.equal(byId(tree, "settlement-paid-to").props.children, "you");
 });
 
 test("owes-you modal shows secondary Remind under primary Record payment", () => {

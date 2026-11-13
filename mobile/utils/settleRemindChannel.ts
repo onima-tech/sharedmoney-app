@@ -100,12 +100,12 @@ export async function resolveSettleRemindChannel(
 export function settleRemindLabel(
   channel: SettleRemindChannel,
   firstName?: string | null,
+  options?: { asWritten?: boolean },
 ): string {
   if (channel === "whatsapp") return "Remind on WhatsApp";
   const trimmed = (firstName ?? "").trim();
-  if (trimmed) {
-    const first = trimmed.split(/\s+/)[0] || trimmed;
-    return `Remind ${first}`;
-  }
-  return "Remind";
+  if (!trimmed) return "Remind";
+  if (options?.asWritten) return `Remind ${trimmed}`;
+  const first = trimmed.split(/\s+/)[0] || trimmed;
+  return `Remind ${first}`;
 }

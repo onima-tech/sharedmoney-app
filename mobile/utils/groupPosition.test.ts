@@ -72,6 +72,22 @@ Deno.test("position number drops .00 on whole amounts and keeps paise", () => {
   assertEquals(paise.sentence, "Rahul owes ₹5,625.50 ›");
 });
 
+Deno.test("position sentence disambiguates a shared first name", () => {
+  const christophers: Participant[] = [
+    { id: "me", group_id: "g", user_id: "me", type: "member", full_name: "Asha Rao" },
+    { id: "cf", group_id: "g", user_id: "cf", type: "member", full_name: "Christopher Fernandez" },
+    { id: "cm", group_id: "g", user_id: "cm", type: "member", full_name: "Christopher Mills" },
+  ];
+  const result = position([
+    balance("me", 2400),
+    { ...balance("cf", -1600), full_name: "Christopher Fernandez" },
+    { ...balance("cm", -800), full_name: "Christopher Mills" },
+  ], { participants: christophers });
+  assertEquals(result.kind, "ready");
+  if (result.kind !== "ready") return;
+  assertEquals(result.sentence, "Christopher F. owes ₹1,600 · Christopher M. ₹800 ›");
+});
+
 Deno.test("position owe: one counterparty", () => {
   const result = position([
     balance("me", -1050),
