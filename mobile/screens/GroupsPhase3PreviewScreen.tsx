@@ -218,7 +218,7 @@ export function GroupsPhase3PreviewScreen({ shot }: { shot: GroupsPhase3Shot }) 
                 </Text>
                 <View style={styles.footer}>
                   <Text style={{ color: theme.colors.onSurfaceVariant }}>Archived 2 · Former 1</Text>
-                  <Text testID="new-group-action" style={{ color: theme.colors.primary }}>New group</Text>
+                  <Text testID="new-group-action" style={{ color: theme.colors.onSurfaceVariant }}>New group</Text>
                 </View>
                 <View testID="notifications-primer" style={styles.primer}>
                   <Text style={{ color: theme.colors.onSurfaceVariant, flex: 1 }}>

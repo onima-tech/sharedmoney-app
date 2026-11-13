@@ -43,14 +43,30 @@ Deno.test("even when overall_balances is empty does not invent a currency", () =
     groupsWithBalance: 0,
     activeGroupCount: 2,
   });
+  assertEquals(result.kind, "amount");
+  if (result.kind !== "amount") return;
+  assertEquals(result.label, "You're even");
+  assertEquals(result.mutedLine, "Across 2 groups");
+  assertEquals("numberText" in result, false);
+  const encoded = JSON.stringify(result);
+  assertEquals(encoded.includes("₹"), false);
+  assertEquals(encoded.includes("$"), false);
+  assertEquals(encoded.includes("0"), false);
+});
+
+Deno.test("a single even overall row keeps that currency's zero", () => {
+  const result = homePosition({
+    hasBalances: true,
+    overallBalances: [row(0, "INR")],
+    groupsWithBalance: 0,
+    activeGroupCount: 2,
+  });
   assertEquals(result, {
     kind: "amount",
     label: "You're even",
-    numberText: "0",
+    numberText: "₹0",
     mutedLine: "Across 2 groups",
   });
-  assertEquals(JSON.stringify(result).includes("₹"), false);
-  assertEquals(JSON.stringify(result).includes("$"), false);
 });
 
 Deno.test("combining multi-group case shows the overall row and does not add parts", () => {

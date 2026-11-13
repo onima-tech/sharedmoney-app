@@ -17,8 +17,11 @@ export type HomePosition =
   | {
       kind: "amount";
       label: HomePositionLabel;
-      /** The single overall_balances figure, or "0" when that response is empty. */
-      numberText: string;
+      /**
+       * The single overall_balances figure. Absent when that response is empty:
+       * even has a label and a muted line, and no number in any currency.
+       */
+      numberText?: string;
       mutedLine: string;
     }
   | {
@@ -102,7 +105,6 @@ export function homePosition(input: {
   return {
     kind: "amount",
     label: "You're even",
-    numberText: "0",
     mutedLine: acrossLine(input.activeGroupCount),
   };
 }

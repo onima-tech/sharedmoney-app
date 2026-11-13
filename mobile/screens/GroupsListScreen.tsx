@@ -109,7 +109,11 @@ export function HomePositionView({ position }: { position: HomePosition }) {
       return (
         <View
           testID="home-position"
-          accessibilityLabel={`${position.label}, ${position.numberText}, ${position.mutedLine}`}
+          accessibilityLabel={
+            position.numberText
+              ? `${position.label}, ${position.numberText}, ${position.mutedLine}`
+              : `${position.label}, ${position.mutedLine}`
+          }
           style={styles.positionBlock}
         >
           <Text
@@ -119,12 +123,14 @@ export function HomePositionView({ position }: { position: HomePosition }) {
           >
             {position.label}
           </Text>
-          <Text
-            testID="home-position-number"
-            style={[styles.positionNumber, { color: theme.colors.onSurface }]}
-          >
-            {position.numberText}
-          </Text>
+          {position.numberText ? (
+            <Text
+              testID="home-position-number"
+              style={[styles.positionNumber, { color: theme.colors.onSurface }]}
+            >
+              {position.numberText}
+            </Text>
+          ) : null}
           <Text
             variant="bodySmall"
             testID="home-position-muted"
@@ -659,7 +665,7 @@ export const GroupsListScreen: React.FC<GroupsListScreenProps> = ({
                   accessibilityRole="button"
                   accessibilityLabel="New group"
                   testID="new-group-action"
-                  style={[styles.footerText, { color: theme.colors.primary }]}
+                  style={[styles.footerText, { color: theme.colors.onSurfaceVariant }]}
                 >
                   New group
                 </Text>
