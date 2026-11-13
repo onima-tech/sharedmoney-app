@@ -49,7 +49,12 @@ import {
 } from "../utils/currency";
 import { convertAmount, resolveRate } from "../utils/currencyMerge";
 import { getUserFriendlyErrorMessage } from "../utils/errorMessages";
-import { intersectSplitAmongWithAvailable } from "../utils/groupSplit";
+import {
+  intersectSplitAmongWithAvailable,
+  newExpenseSplitFromGroupDefault,
+  normalizeGroupDefaultSplit,
+  storedExpenseSplitState,
+} from "../utils/groupSplit";
 import { getWebHeroAmountInputWidth } from "../utils/heroAmountLayout";
 import {
     amountsFromShares,
@@ -58,14 +63,12 @@ import {
     defaultShareMap,
     distributeRemaining,
     equalSplitAmountMap,
-    formatAmountInput,
-    isUnequalSplit,
     remainingSplitAmount,
     sharesAreUnequal,
     splitsFromAmountMap,
     sumSelectedAmounts,
 } from "../utils/splits";
-import { useGroups } from "../hooks/useGroups";
+import { useGroupDetails, useGroups } from "../hooks/useGroups";
 import {
   SplitBillScreen,
   splitDraftFromExpense,
@@ -149,6 +152,9 @@ export const TransactionFormScreen: React.FC<TransactionFormScreenProps> = ({
   const [oneTimeSplitDraft, setOneTimeSplitDraft] = useState<SplitBillDraft | undefined>();
   const effectiveGroupId = groupId || pickedGroupId;
   const { data: allGroups } = useGroups();
+  const groupDefaultQuery = useGroupDetails(
+    transaction || !effectiveGroupId ? null : effectiveGroupId,
+  );
   const {
     groupSettings,
     rateBook,
@@ -298,33 +304,12 @@ export const TransactionFormScreen: React.FC<TransactionFormScreenProps> = ({
         setPaidBy("");
       }
 
-      if (Array.isArray(tx.splits) && tx.splits.length > 0) {
-        const participantIds = tx.splits
-          .map((s) => s.participant_id)
-          .filter((id): id is string => !!id);
-        const uniqueIds = [...new Set(participantIds)];
-        const amountMap: Record<string, string> = {};
-        tx.splits.forEach((split) => {
-          if (split.participant_id) {
-            amountMap[split.participant_id] = formatAmountInput(split.amount);
-          }
-        });
-        setSplitAmong(uniqueIds);
-        setSplitAmounts(amountMap);
-        setSplitShares(defaultShareMap(uniqueIds));
-        setSplitMode(isUnequalSplit(tx.splits) ? "unequal" : "equal");
-      } else if (Array.isArray(tx.split_among_participant_ids) && tx.split_among_participant_ids.length > 0) {
-        const uniqueIds = [...new Set(tx.split_among_participant_ids)];
-        setSplitAmong(uniqueIds);
-        setSplitAmounts({});
-        setSplitShares(defaultShareMap(uniqueIds));
-        setSplitMode("equal");
-      } else {
-        setSplitAmong([]);
-        setSplitAmounts({});
-        setSplitShares({});
-        setSplitMode("equal");
-      }
+      // Saved expenses keep their own splits. The group default is not consulted.
+      const stored = storedExpenseSplitState(tx);
+      setSplitAmong(stored.selectedIds);
+      setSplitAmounts(stored.amounts);
+      setSplitShares(stored.shares);
+      setSplitMode(stored.mode);
       didDefaultSplitRef.current = true;
     },
     [effectiveDefaultCurrency]
@@ -355,34 +340,50 @@ export const TransactionFormScreen: React.FC<TransactionFormScreenProps> = ({
       setPaidBy("");
       didDefaultSplitRef.current = false;
     } else {
-      // For a new group expense, default split to the last expense's people once.
+      // For a new group expense, prefill once from the group default.
+      // Weights include everyone. Equal still starts from the last expense's people.
       // After that, an empty selection is an intentional user state and should remain empty.
       if (!didDefaultSplitRef.current && splitAmong.length === 0 && allParticipantIds.length > 0) {
-        const rememberedSource =
-          (defaultSplitAmong && defaultSplitAmong.length > 0)
-            ? defaultSplitAmong
-            : lastExpenseSplitQuery.data;
-        const rememberedIds = intersectSplitAmongWithAvailable(
-          rememberedSource,
-          allParticipantIds,
-        );
-        if (rememberedIds.length > 0) {
-          setSplitAmong(rememberedIds);
-          setSplitShares(defaultShareMap(rememberedIds));
-          didDefaultSplitRef.current = true;
-          return;
+        const defaultReady = groupDefaultQuery.isFetched || !!groupDefaultQuery.error;
+        if (defaultReady) {
+          const groupDefault = normalizeGroupDefaultSplit(groupDefaultQuery.data);
+          if (groupDefault.mode === "weights") {
+            const prefill = newExpenseSplitFromGroupDefault({
+              groupDefault,
+              availableParticipantIds: allParticipantIds,
+            });
+            setSplitAmong(prefill.selectedIds);
+            setSplitShares(prefill.shares);
+            setSplitMode(prefill.mode);
+            setSplitAmounts({});
+            didDefaultSplitRef.current = true;
+          } else {
+            const rememberedSource =
+              (defaultSplitAmong && defaultSplitAmong.length > 0)
+                ? defaultSplitAmong
+                : lastExpenseSplitQuery.data;
+            const rememberedIds = intersectSplitAmongWithAvailable(
+              rememberedSource,
+              allParticipantIds,
+            );
+            const lastSplitResolved =
+              lastExpenseSplitQuery.isFetched
+              || lastExpenseSplitQuery.isError
+              || !effectiveGroupId
+              || Boolean(defaultSplitAmong && defaultSplitAmong.length > 0);
+            if (rememberedIds.length > 0 || lastSplitResolved) {
+              const prefill = newExpenseSplitFromGroupDefault({
+                groupDefault,
+                availableParticipantIds: allParticipantIds,
+                rememberedIds,
+              });
+              setSplitAmong(prefill.selectedIds);
+              setSplitShares(prefill.shares);
+              setSplitMode(prefill.mode);
+              didDefaultSplitRef.current = true;
+            }
+          }
         }
-
-        const lastSplitResolved =
-          lastExpenseSplitQuery.isFetched
-          || lastExpenseSplitQuery.isError
-          || !effectiveGroupId
-          || Boolean(defaultSplitAmong && defaultSplitAmong.length > 0);
-        if (!lastSplitResolved) return;
-
-        setSplitAmong(allParticipantIds);
-        setSplitShares(defaultShareMap(allParticipantIds));
-        didDefaultSplitRef.current = true;
       }
       
       // Default "Paid By" to the current user
@@ -406,6 +407,9 @@ export const TransactionFormScreen: React.FC<TransactionFormScreenProps> = ({
     lastExpenseSplitQuery.isFetched,
     lastExpenseSplitQuery.isError,
     effectiveGroupId,
+    groupDefaultQuery.isFetched,
+    groupDefaultQuery.error,
+    groupDefaultQuery.data,
   ]);
 
   const formatDateForInput = (date: Date): string => {

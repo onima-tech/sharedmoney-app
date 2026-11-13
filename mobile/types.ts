@@ -79,6 +79,12 @@ export interface Group {
   settlement_currency?: string | null;
   unify_balances?: boolean;
   /**
+   * Prefill for a new expense. Saved expenses keep the splits stored on them.
+   */
+  default_split_mode?: "equal" | "weights";
+  /** Participant id to share count. Used only when default_split_mode is weights. */
+  default_split_weights?: Record<string, number>;
+  /**
    * Present only on a fresh GET /groups. Null means the fetch found no
    * activity. Omitted on the disk cache so recency is not painted from disk.
    */

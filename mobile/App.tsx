@@ -110,6 +110,10 @@ import {
   GroupsPhase3PreviewScreen,
   readGroupsPhase3Shot,
 } from "./screens/GroupsPhase3PreviewScreen";
+import {
+  DefaultSplitPreviewScreen,
+  readDefaultSplitShot,
+} from "./screens/DefaultSplitPreviewScreen";
 import { extractBillSplitToken } from "./utils/billSplit";
 import { NotificationDetailScreen } from "./screens/NotificationDetailScreen";
 import { NotificationsScreen } from "./screens/NotificationsScreen";
@@ -269,6 +273,7 @@ let pendingDevBillPreview: "dead" | "offline" | null = null;
 let pendingDevGroupsPhase1 = false;
 let pendingDevGroupsPhase2 = false;
 let pendingDevGroupsPhase3 = false;
+let pendingDevDefaultSplit = false;
 let pendingDevCrashPreview: "first" | "repeat" | "copied" | null = null;
 let pendingDevForceCrash = false;
 
@@ -311,6 +316,10 @@ function applyDevPreview(kind: DevPreviewKind): boolean {
     pendingDevGroupsPhase3 = true;
     return true;
   }
+  if (kind === "default-split") {
+    pendingDevDefaultSplit = true;
+    return true;
+  }
   return false;
 }
 
@@ -327,6 +336,7 @@ function AppContent() {
   const [devGroupsPhase1, setDevGroupsPhase1] = useState(pendingDevGroupsPhase1);
   const [devGroupsPhase2, setDevGroupsPhase2] = useState(pendingDevGroupsPhase2);
   const [devGroupsPhase3, setDevGroupsPhase3] = useState(pendingDevGroupsPhase3);
+  const [devDefaultSplit, setDevDefaultSplit] = useState(pendingDevDefaultSplit);
   const [devCrashPreview, setDevCrashPreview] = useState<
     null | "first" | "repeat" | "copied"
   >(pendingDevCrashPreview);
@@ -812,6 +822,7 @@ function AppContent() {
         if (devPreview === "groups-phase1") setDevGroupsPhase1(true);
         if (devPreview === "groups-phase2") setDevGroupsPhase2(true);
         if (devPreview === "groups-phase3") setDevGroupsPhase3(true);
+        if (devPreview === "default-split") setDevDefaultSplit(true);
         return;
       }
       const billToken = extractBillSplitToken(url);
@@ -1249,6 +1260,8 @@ function AppContent() {
             ...prev,
             name: updatedGroup.name,
             description: updatedGroup.description,
+            default_split_mode: updatedGroup.default_split_mode ?? prev.default_split_mode,
+            default_split_weights: updatedGroup.default_split_weights ?? prev.default_split_weights,
           };
         }
         return prev;
@@ -1454,6 +1467,15 @@ function AppContent() {
           Platform.OS === "web" && typeof window !== "undefined" ? window.location.href : null,
         )}
       />
+    );
+  }
+
+  if (__DEV__ && (previewParam === "default-split" || devDefaultSplit)) {
+    const shot = readDefaultSplitShot(
+      Platform.OS === "web" && typeof window !== "undefined" ? window.location.href : null,
+    );
+    return (
+      <DefaultSplitPreviewScreen key={`default-split-${shot}`} shot={shot} />
     );
   }
 

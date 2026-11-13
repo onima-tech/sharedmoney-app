@@ -16,6 +16,7 @@ export type DevPreviewKind =
   | "groups-phase1"
   | "groups-phase2"
   | "groups-phase3"
+  | "default-split"
   | null;
 
 const PREVIEW_QUERY_VALUES = new Set([
@@ -28,6 +29,7 @@ const PREVIEW_QUERY_VALUES = new Set([
   "groups-phase1",
   "groups-phase2",
   "groups-phase3",
+  "default-split",
 ]);
 
 function previewFromPath(haystack: string): DevPreviewKind {
@@ -57,6 +59,9 @@ function previewFromPath(haystack: string): DevPreviewKind {
   }
   if (haystack.includes("dev/groups-phase3") || haystack.includes("dev-groups-phase3")) {
     return "groups-phase3";
+  }
+  if (haystack.includes("dev/default-split") || haystack.includes("dev-default-split")) {
+    return "default-split";
   }
   return null;
 }

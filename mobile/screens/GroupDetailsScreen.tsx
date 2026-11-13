@@ -35,6 +35,7 @@ import {
   ActivityFeedRow,
 } from "../components/ActivityFeed";
 import { GroupDashboard } from "../components/GroupDashboard";
+import { GroupDefaultSplitSheet } from "../components/GroupDefaultSplitSheet";
 import { SettlementCurrencySheet } from "../components/SettlementCurrencySheet";
 import { InvitationsList } from "../components/InvitationsList";
 import { MembersList } from "../components/MembersList";
@@ -55,7 +56,7 @@ import {
   useCancelInvitation,
   useGroupInvitations,
 } from "../hooks/useGroupInvitations";
-import { useRemoveMember, useUpdateGroup, useArchiveGroup, useUnarchiveGroup, useHideGroupFromLists } from "../hooks/useGroupMutations";
+import { useRemoveMember, useUpdateGroup, useUpdateGroupDefaultSplit, useArchiveGroup, useUnarchiveGroup, useHideGroupFromLists } from "../hooks/useGroupMutations";
 import { useGroupDetails } from "../hooks/useGroups";
 import { SafetyTarget, useModeration } from "../hooks/useModeration";
 import {
@@ -141,6 +142,7 @@ import {
   type TransactionSearchFilter,
 } from "../utils/transactionSearch";
 import { buildActivityFeedEntries, type ActivityFeedEntry } from "../utils/activityFeedRows";
+import { normalizeGroupDefaultSplit } from "../utils/groupSplit";
 import {
   countActiveMembers,
   countNonFormerParticipants,
@@ -237,6 +239,8 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   );
   const [showMembers, setShowMembers] = useState<boolean>(false);
   const [showCurrencySettings, setShowCurrencySettings] = useState<boolean>(false);
+  const [showDefaultSplit, setShowDefaultSplit] = useState(false);
+  const [defaultSplitError, setDefaultSplitError] = useState<string | null>(null);
   const [editDialogVisible, setEditDialogVisible] = useState(false);
   const [editName, setEditName] = useState(initialGroup.name);
   const [editDescription, setEditDescription] = useState(
@@ -627,6 +631,7 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
       onBack();
     }
   });
+  const updateDefaultSplitMutation = useUpdateGroupDefaultSplit();
   const updateGroupMutation = useUpdateGroup(() => {
     void refetchGroup();
   });
@@ -1773,6 +1778,24 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     }
   };
 
+  const handleSaveDefaultSplit = async (
+    mode: "equal" | "weights",
+    weights: Record<string, number>,
+  ) => {
+    setDefaultSplitError(null);
+    try {
+      const updatedGroup = await updateDefaultSplitMutation.mutate({
+        groupId: group.id,
+        mode,
+        weights,
+      });
+      setShowDefaultSplit(false);
+      onGroupUpdated?.(updatedGroup);
+    } catch (err) {
+      setDefaultSplitError(getUserFriendlyErrorMessage(err));
+    }
+  };
+
   const handleCancelInvitation = async (invitationId: string) => {
     const performCancel = async () => {
       try {
@@ -2053,6 +2076,16 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
                     testID="group-menu-edit-details"
                   />
                 )}
+                <Menu.Item
+                  onPress={() => {
+                    handleCloseMenu();
+                    setDefaultSplitError(null);
+                    setShowDefaultSplit(true);
+                  }}
+                  title="Default split"
+                  leadingIcon="scale-balance"
+                  testID="group-menu-default-split"
+                />
                 <Menu.Item
                   onPress={() => {
                     handleCloseMenu();
@@ -2636,6 +2669,23 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
             setSettlingBalance(null);
             setEditingSettlement(null);
           }, SCREEN_TRANSITION_MS);
+        }}
+      />
+
+      <GroupDefaultSplitSheet
+        visible={showDefaultSplit}
+        groupName={group.name}
+        participants={participants.filter((person) => person.type !== "former")}
+        mode={normalizeGroupDefaultSplit(group).mode}
+        weights={normalizeGroupDefaultSplit(group).weights}
+        saving={updateDefaultSplitMutation.isLoading}
+        error={defaultSplitError}
+        onDismiss={() => {
+          setShowDefaultSplit(false);
+          setDefaultSplitError(null);
+        }}
+        onSave={(mode, weights) => {
+          void handleSaveDefaultSplit(mode, weights);
         }}
       />
 
