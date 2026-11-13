@@ -16,6 +16,7 @@ import React, {
 } from "react";
 import { Platform } from "react-native";
 import { AUTH_TIMEOUTS } from "../constants/auth";
+import { clearGroupOpenCaches } from "../hooks/hydrateGroupOpenCache";
 import { unregisterCurrentPushToken } from "../services/pushNotifications";
 import { supabase } from "../supabase";
 import { getConfiguredWebAppPath } from "../utils/inviteLinks";
@@ -311,6 +312,9 @@ const [loading, setLoading] = useState<boolean>(() => !isWebAuthShellActive());
       if (transition) {
         recordSentryAuthSessionTransition(transition);
       }
+    }
+    if (previousUserId && !nextUserId) {
+      void clearGroupOpenCaches().catch(() => {});
     }
     if (
       Platform.OS === "web" &&

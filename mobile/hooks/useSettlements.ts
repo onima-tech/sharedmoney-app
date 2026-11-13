@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useMemo } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -8,6 +9,7 @@ import type { SettlementCreateInput } from "../utils/peopleSettlements";
 import { recordSettlementBatch } from "../utils/settlementBatch";
 import { captureIdentifiedAnalyticsEvent } from "../utils/posthogAnalytics";
 import { ANALYTICS_EVENTS } from "../utils/posthogEvents";
+import { saveGroupOpenPart } from "../utils/groupOpenCache";
 import { queryKeys } from "./queryKeys";
 
 export async function fetchSettlements(groupId: string): Promise<SettlementsResponse> {
@@ -27,14 +29,23 @@ function invalidateSettlementAdjacents(queryClient: QueryClient, groupId?: strin
   queryClient.invalidateQueries({ queryKey: queryKeys.activity(groupId) });
 }
 
-export function useSettlements(groupId?: string | null) {
+export function useSettlements(
+  groupId?: string | null,
+  options?: { enabled?: boolean },
+) {
   const { user } = useAuth();
 
   const query = useQuery<SettlementsResponse, Error>({
     // Guarded by `enabled`, so groupId is always non-null inside queryFn
     queryKey: groupId ? queryKeys.settlements(groupId) : queryKeys.settlements(""),
-    queryFn: () => fetchSettlements(groupId as string),
-    enabled: !!user?.id && !!groupId,
+    queryFn: async () => {
+      const data = await fetchSettlements(groupId as string);
+      if (user?.id && groupId) {
+        void saveGroupOpenPart(user.id, groupId, { settlements: data.settlements }, AsyncStorage);
+      }
+      return data;
+    },
+    enabled: !!user?.id && !!groupId && options?.enabled !== false,
     staleTime: 30_000,
   });
 
@@ -47,6 +58,8 @@ export function useSettlements(groupId?: string | null) {
   return {
     data,
     isLoading: query.isLoading,
+    isPending: query.isPending,
+    isFetched: query.isFetched,
     isFetching: query.isFetching,
     error: query.error ?? null,
     refetch: query.refetch,

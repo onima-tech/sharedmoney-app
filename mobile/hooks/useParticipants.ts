@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { QueryClient } from "@tanstack/react-query";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../contexts/AuthContext";
@@ -6,6 +7,7 @@ import { fetchWithAuth } from "../utils/api";
 import { ExistingPerson } from "../utils/peoplePicker";
 import { captureIdentifiedAnalyticsEvent } from "../utils/posthogAnalytics";
 import { ANALYTICS_EVENTS } from "../utils/posthogEvents";
+import { saveGroupOpenPart } from "../utils/groupOpenCache";
 import { queryKeys } from "./queryKeys";
 
 export async function fetchParticipants(
@@ -25,7 +27,13 @@ export function useParticipants(groupId: string | null) {
     queryKey: groupId
       ? queryKeys.participants(groupId)
       : queryKeys.participants(""),
-    queryFn: () => fetchParticipants(groupId as string),
+    queryFn: async () => {
+      const data = await fetchParticipants(groupId as string);
+      if (user?.id && groupId) {
+        void saveGroupOpenPart(user.id, groupId, { participants: data }, AsyncStorage);
+      }
+      return data;
+    },
     enabled: !!user?.id && !!groupId,
     placeholderData: [],
     staleTime: 60_000,
@@ -34,6 +42,8 @@ export function useParticipants(groupId: string | null) {
   return {
     data: query.data ?? [],
     isLoading: query.isLoading,
+    isPending: query.isPending,
+    isPlaceholderData: query.isPlaceholderData,
     isFetching: query.isFetching,
     error: query.error ?? null,
     refetch: query.refetch,

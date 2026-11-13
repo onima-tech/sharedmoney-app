@@ -1,3 +1,4 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useMemo } from "react";
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -22,6 +23,7 @@ import {
   replaceOptimisticTransactionInFeed,
   resolveCreatedTransaction,
 } from "../utils/transactionOptimisticCache";
+import { saveGroupOpenPart } from "../utils/groupOpenCache";
 import { queryKeys } from "./queryKeys";
 
 export interface TransactionsCursor {
@@ -225,18 +227,27 @@ export function useGroupLastExpenseSplitAmong(groupId?: string | null) {
   });
 }
 
-export function useTransactions(groupId?: string | null) {
+export function useTransactions(
+  groupId?: string | null,
+  options?: { enabled?: boolean },
+) {
   const { user } = useAuth();
+  const scopeEnabled = !!user?.id && (!!groupId || groupId === null || groupId === undefined);
 
   const query = useInfiniteQuery({
     queryKey: groupId ? queryKeys.transactionsFeed(groupId) : queryKeys.transactionsFeed(""),
-    queryFn: ({ pageParam }: { pageParam: TransactionsCursor | null }) =>
-      fetchTransactionsPage({ groupId, cursor: pageParam }),
+    queryFn: async ({ pageParam }: { pageParam: TransactionsCursor | null }) => {
+      const page = await fetchTransactionsPage({ groupId, cursor: pageParam });
+      if (!pageParam && user?.id && groupId) {
+        void saveGroupOpenPart(user.id, groupId, { ledgerPage: page }, AsyncStorage);
+      }
+      return page;
+    },
     initialPageParam: null as TransactionsCursor | null,
     getNextPageParam: (lastPage) => (
       lastPage?.has_more && lastPage?.next_cursor ? lastPage.next_cursor : null
     ),
-    enabled: !!user?.id && (!!groupId || groupId === null || groupId === undefined),
+    enabled: scopeEnabled && options?.enabled !== false,
     staleTime: 30_000,
   });
 
@@ -251,6 +262,8 @@ export function useTransactions(groupId?: string | null) {
   return {
     data: flattenedData,
     isLoading: query.isLoading,
+    isPending: query.isPending,
+    isFetched: query.isFetched,
     isFetching: query.isFetching,
     isFetchingNextPage: query.isFetchingNextPage,
     hasNextPage: query.hasNextPage,

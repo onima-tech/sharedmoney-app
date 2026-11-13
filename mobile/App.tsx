@@ -59,6 +59,9 @@ import {
   useNotifications,
 } from "./hooks/useNotifications";
 import { fetchBalances } from "./hooks/useBalances";
+import { hydrateGroupQueries } from "./hooks/hydrateGroupOpenCache";
+import { fetchSettlements } from "./hooks/useSettlements";
+import { saveGroupOpenPart } from "./utils/groupOpenCache";
 import {
   fetchInvitationsForEmail,
   redeemGroupInviteLinkRPC,
@@ -94,6 +97,10 @@ import {
   GroupsPhase1PreviewScreen,
   readGroupsPhase1Shot,
 } from "./screens/GroupsPhase1PreviewScreen";
+import {
+  GroupsPhase2PreviewScreen,
+  readGroupsPhase2Shot,
+} from "./screens/GroupsPhase2PreviewScreen";
 import { extractBillSplitToken } from "./utils/billSplit";
 import { NotificationDetailScreen } from "./screens/NotificationDetailScreen";
 import { NotificationsScreen } from "./screens/NotificationsScreen";
@@ -251,6 +258,7 @@ const DEV_CRASH_PREVIEW_ID = "SM-7K3Q-92";
 /** Module-level so remounts during auth bootstrap don't drop the QA deep link. */
 let pendingDevBillPreview: "dead" | "offline" | null = null;
 let pendingDevGroupsPhase1 = false;
+let pendingDevGroupsPhase2 = false;
 let pendingDevCrashPreview: "first" | "repeat" | "copied" | null = null;
 let pendingDevForceCrash = false;
 
@@ -285,6 +293,10 @@ function applyDevPreview(kind: DevPreviewKind): boolean {
     pendingDevGroupsPhase1 = true;
     return true;
   }
+  if (kind === "groups-phase2") {
+    pendingDevGroupsPhase2 = true;
+    return true;
+  }
   return false;
 }
 
@@ -299,6 +311,7 @@ function AppContent() {
     pendingDevBillPreview,
   );
   const [devGroupsPhase1, setDevGroupsPhase1] = useState(pendingDevGroupsPhase1);
+  const [devGroupsPhase2, setDevGroupsPhase2] = useState(pendingDevGroupsPhase2);
   const [devCrashPreview, setDevCrashPreview] = useState<
     null | "first" | "repeat" | "copied"
   >(pendingDevCrashPreview);
@@ -409,6 +422,12 @@ function AppContent() {
   const authUserIdRef = React.useRef<string | null>(session?.user?.id ?? user?.id ?? null);
   authUserIdRef.current = session?.user?.id ?? user?.id ?? null;
 
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    void hydrateGroupQueries(userId, queryClientInstance);
+  }, [queryClientInstance, session?.user?.id]);
+
   const resolveAnalyticsUserId = React.useCallback(async (): Promise<string | null> => {
     if (authUserIdRef.current) return authUserIdRef.current;
     try {
@@ -426,30 +445,45 @@ function AppContent() {
       // Critical path only: details + balances/stats + first ledger page.
       // Defer activity, last-currency, and last-split-among so they do not
       // contend with the balances edge function on open.
+      const userId = authUserIdRef.current;
+      // Balance first. The first ledger page (expenses and settlements) follows.
+      // Stats and history stay off this path until those screens open.
       await Promise.all([
         queryClientInstance.prefetchQuery({
           queryKey: queryKeys.group(groupId),
           queryFn: () => fetchGroupDetails(groupId),
         }),
+        queryClientInstance.prefetchQuery({
+          queryKey: queryKeys.balances(groupId),
+          queryFn: async () => {
+            const data = await fetchBalances(groupId, false);
+            if (userId) {
+              void saveGroupOpenPart(userId, groupId, { balances: data }, AsyncStorage);
+            }
+            return data;
+          },
+        }),
+      ]);
+      await Promise.all([
         queryClientInstance.prefetchInfiniteQuery({
           queryKey: queryKeys.transactionsFeed(groupId),
-          queryFn: ({ pageParam }) =>
-            fetchTransactionsPage({ groupId, cursor: pageParam ?? null }),
+          queryFn: async ({ pageParam }) => {
+            const page = await fetchTransactionsPage({ groupId, cursor: pageParam ?? null });
+            if (!pageParam && userId) {
+              void saveGroupOpenPart(userId, groupId, { ledgerPage: page }, AsyncStorage);
+            }
+            return page;
+          },
           initialPageParam: null as TransactionsCursor | null,
           getNextPageParam: (lastPage: TransactionsPageResponse) =>
             lastPage.has_more ? lastPage.next_cursor : null,
         }),
         queryClientInstance.prefetchQuery({
-          // Must include stats: GroupDetails / GroupStats share this key and need
-          // group_stats for My spending / Group summary (#349 key merge regression).
-          queryKey: queryKeys.balances(groupId),
+          queryKey: queryKeys.settlements(groupId),
           queryFn: async () => {
-            const data = await fetchBalances(groupId, true);
-            if (data.group_stats) {
-              queryClientInstance.setQueryData(
-                queryKeys.groupStats(groupId),
-                data.group_stats
-              );
+            const data = await fetchSettlements(groupId);
+            if (userId) {
+              void saveGroupOpenPart(userId, groupId, { settlements: data.settlements }, AsyncStorage);
             }
             return data;
           },
@@ -775,6 +809,7 @@ function AppContent() {
         if (devPreview === "bill-dead") setDevBillPreview("dead");
         if (devPreview === "bill-offline") setDevBillPreview("offline");
         if (devPreview === "groups-phase1") setDevGroupsPhase1(true);
+        if (devPreview === "groups-phase2") setDevGroupsPhase2(true);
         return;
       }
       const billToken = extractBillSplitToken(url);
@@ -1266,15 +1301,23 @@ function AppContent() {
 
   const handleGroupPress = (group: Group) => {
     setGroupDetailsOpenStartedAtMs(Date.now());
-    prefetchGroupData(group.id).catch((err) =>
-      logError(err, { context: "prefetchGroupData", groupId: group.id })
-    );
-    setSelectedGroup(group);
-    setGroupInitialListMode("transactions");
-    setHighlightedTransactionId(null);
-    setCurrentRoute("group-details");
-    setStatsContext(null);
-    // Group details will be fetched via useGroupDetails hook
+    const userId = authUserIdRef.current;
+    const open = () => {
+      prefetchGroupData(group.id).catch((err) =>
+        logError(err, { context: "prefetchGroupData", groupId: group.id })
+      );
+      setSelectedGroup(group);
+      setGroupInitialListMode("transactions");
+      setHighlightedTransactionId(null);
+      setCurrentRoute("group-details");
+      setStatsContext(null);
+    };
+    if (!userId) {
+      open();
+      return;
+    }
+    // Saved balances and the first ledger page are in memory before the screen paints.
+    void hydrateGroupQueries(userId, queryClientInstance).then(open, open);
   };
 
   const goToGroups = () => {
@@ -1408,6 +1451,16 @@ function AppContent() {
     );
   }
 
+  if (__DEV__ && previewParam === "groups-phase2") {
+    return (
+      <GroupsPhase2PreviewScreen
+        shot={readGroupsPhase2Shot(
+          Platform.OS === "web" && typeof window !== "undefined" ? window.location.href : null,
+        )}
+      />
+    );
+  }
+
   // Render-time throw so the root ErrorBoundary paints CrashErrorFallback.
   // Stripped from production builds via the __DEV__ gate (never ships).
   if (__DEV__ && devForceCrash) {
@@ -1441,6 +1494,15 @@ function AppContent() {
     setSelectedGroup(null);
     clearJoinPathFromWebUrl();
   };
+
+  if (__DEV__ && devGroupsPhase2) {
+    const shot = readGroupsPhase2Shot(
+      Platform.OS === "web" && typeof window !== "undefined" ? window.location.href : null,
+    );
+    return (
+      <GroupsPhase2PreviewScreen key={`groups-phase2-${shot}`} shot={shot} />
+    );
+  }
 
   if (__DEV__ && devGroupsPhase1) {
     const shot = readGroupsPhase1Shot(

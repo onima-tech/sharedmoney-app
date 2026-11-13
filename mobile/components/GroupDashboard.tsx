@@ -77,6 +77,11 @@ interface GroupDashboardProps {
   participants?: Participant[];
   /** Synchronous fallback when effective cached currency settings are absent. */
   unifyBalances?: boolean;
+  /**
+   * full: today's dashboard. rows: settle list only. hidden: share-summary
+   * effects without painting rows (the position block owns the group page).
+   */
+  presentation?: "full" | "rows" | "hidden";
 }
 
 function presenceForBalance(
@@ -112,6 +117,7 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
   hasNonZeroBalance = false,
   participants = [],
   unifyBalances: groupUnifyBalances,
+  presentation = "full",
 }) => {
   const theme = useTheme();
   const { fontScale } = useWindowDimensions();
@@ -475,6 +481,10 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
     });
   };
 
+  if (presentation === "hidden") {
+    return null;
+  }
+
   if ((dashboardLoading || !currentUserId) && !balanceError) {
     return (
       <SkeletonGroup style={styles.container} testID="group-dashboard-skeleton">
@@ -502,7 +512,7 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
 
   return (
     <View style={styles.container}>
-      {hasMultipleCurrencies && !unifyEnabled && !balanceError && !dashboardLoading ? (
+      {presentation === "full" && hasMultipleCurrencies && !unifyEnabled && !balanceError && !dashboardLoading ? (
         <UnifyPromptCard
           currencies={usedCurrencies}
           suggestedCurrency={settlementCurrency}
@@ -520,7 +530,7 @@ export const GroupDashboard: React.FC<GroupDashboardProps> = ({
         />
       ) : null}
 
-      {contentSlots.currencyHeader ? <View style={currencyHeaderStyle}>
+      {presentation === "full" && contentSlots.currencyHeader ? <View style={currencyHeaderStyle}>
         <Text variant="labelMedium" style={{ color: theme.colors.onSurfaceVariant }}>
           {`In one currency · ${settlementCurrency}`}
         </Text>

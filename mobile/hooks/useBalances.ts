@@ -1,8 +1,10 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "../contexts/AuthContext";
 import { BalancesResponse, GroupStatsResponse } from "../types";
 import { fetchWithAuth } from "../utils/api";
+import { saveAllBalances, saveGroupOpenPart } from "../utils/groupOpenCache";
 import { balancesCacheMissingStats } from "./balancesCacheStats";
 import { queryKeys } from "./queryKeys";
 
@@ -46,6 +48,13 @@ export function useBalances(
       if (includeStats && groupId && data.group_stats) {
         queryClient.setQueryData(queryKeys.groupStats(groupId), data.group_stats);
       }
+      if (user?.id) {
+        if (groupId) {
+          void saveGroupOpenPart(user.id, groupId, { balances: data }, AsyncStorage);
+        } else {
+          void saveAllBalances(user.id, data, AsyncStorage);
+        }
+      }
       return data;
     },
     enabled:
@@ -88,7 +97,10 @@ export function useBalances(
     data: query.data ?? { group_balances: [], overall_balances: [] },
     groupStats: (query.data?.group_stats ?? null) as GroupStatsResponse | null,
     isLoading: query.isLoading,
+    isPending: query.isPending,
+    isFetched: query.isFetched,
     isFetching: query.isFetching,
+    isPlaceholderData: query.isPlaceholderData,
     error: query.error ?? null,
     refetch: query.refetch,
   };
