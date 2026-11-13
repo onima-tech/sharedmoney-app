@@ -36,6 +36,7 @@ import {
 } from "../components/ActivityFeed";
 import { GroupDashboard } from "../components/GroupDashboard";
 import { GroupDefaultSplitSheet } from "../components/GroupDefaultSplitSheet";
+import { GroupExportSheet } from "../components/GroupExportSheet";
 import { SettlementCurrencySheet } from "../components/SettlementCurrencySheet";
 import { InvitationsList } from "../components/InvitationsList";
 import { MembersList } from "../components/MembersList";
@@ -90,6 +91,23 @@ import {
 } from "../types";
 import { useCurrencyPreferences } from "../hooks/useCurrencyPreferences";
 import { getDefaultCurrency } from "../utils/currency";
+import {
+  buildGroupCsvDocument,
+  groupExportFilename,
+  participantsForExport,
+} from "../utils/groupExportCsv";
+import {
+  deliverGroupCsv,
+  deliverGroupPdf,
+  isExportCancel,
+  nativePdfExportAvailable,
+} from "../utils/groupExportDelivery";
+import { loadGroupExportSource } from "../utils/groupExportLoad";
+import {
+  buildGroupExportPdfHtml,
+  formatExportDate,
+  memberTotalsForExport,
+} from "../utils/groupExportPdf";
 import { collectCurrencies } from "../utils/currencyMerge";
 import { showErrorAlert } from "../utils/errorHandling";
 import { getGroupLinkUrl, getInviteLinkUrl } from "../utils/inviteLinks";
@@ -231,6 +249,9 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   const [removingMemberId, setRemovingMemberId] = useState<string | null>(null);
   const [workingParticipantId, setWorkingParticipantId] = useState<string | null>(null);
   const [menuVisible, setMenuVisible] = useState<boolean>(false);
+  const [showExport, setShowExport] = useState(false);
+  const [exportBusy, setExportBusy] = useState<"csv" | "pdf" | null>(null);
+  const [pdfExportAvailable, setPdfExportAvailable] = useState(Platform.OS === "web");
   const [shareSummary, setShareSummary] = useState<GroupShareSummaryPayload | null>(null);
   const [whatsAppInstalled, setWhatsAppInstalled] = useState(false);
   const [showSettlementForm, setShowSettlementForm] = useState<boolean>(false);
@@ -295,6 +316,17 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
   const handleOpenMenu = () => {
     setMenuVisible(true);
   };
+
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    let cancelled = false;
+    void nativePdfExportAvailable().then((available) => {
+      if (!cancelled) setPdfExportAvailable(available);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Reset menu visibility when showMembers changes
   React.useEffect(() => {
@@ -1968,6 +2000,54 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
     );
   }
 
+  const handleExport = (kind: "csv" | "pdf") => {
+    if (exportBusy) return;
+    setExportBusy(kind);
+    void (async () => {
+      try {
+        const source = await loadGroupExportSource(group.id);
+        const people = participantsForExport(participants);
+        const filename = groupExportFilename(group.name, kind);
+        const currency = getDefaultCurrency();
+        if (kind === "csv") {
+          const csv = buildGroupCsvDocument({
+            members: people,
+            transactions: source.transactions,
+            settlements: source.settlements,
+            participants,
+            defaultCurrency: currency,
+          });
+          await deliverGroupCsv(filename, csv);
+        } else if (kind === "pdf") {
+          const html = buildGroupExportPdfHtml({
+            groupName: group.name,
+            exportedOn: formatExportDate(new Date()),
+            memberTotals: memberTotalsForExport({
+              participants: people,
+              breakdown: source.stats?.member_breakdown ?? [],
+              defaultCurrency: currency,
+            }),
+            balances: source.balances,
+            currentUserId: session?.user?.id,
+            currentUserParticipantId: viewerParticipantId ?? undefined,
+            defaultCurrency: currency,
+          });
+          await deliverGroupPdf(filename, html);
+        } else {
+          const unexpected: never = kind;
+          throw new Error(`Unexpected export ${unexpected}`);
+        }
+        setShowExport(false);
+      } catch (error) {
+        if (!isExportCancel(error)) {
+          showErrorAlert(error, signOut, "Could not export this group");
+        }
+      } finally {
+        setExportBusy(null);
+      }
+    })();
+  };
+
   return (
     <View
       style={[styles.container, { backgroundColor: theme.colors.background }]}
@@ -2027,6 +2107,15 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
                 testID="group-menu-history"
               />
             )}
+            <Menu.Item
+              onPress={() => {
+                handleCloseMenu();
+                setShowExport(true);
+              }}
+              title="Export"
+              leadingIcon="download"
+              testID="group-menu-export"
+            />
             {isActiveMember && (
               <>
                 <Menu.Item
@@ -2723,6 +2812,18 @@ export const GroupDetailsScreen: React.FC<GroupDetailsScreenProps> = ({
         onResetRate={(from, to) => {
           void clearGroupRate(group.id, from, to);
         }}
+      />
+
+      <GroupExportSheet
+        visible={showExport}
+        groupName={group.name}
+        pdfAvailable={pdfExportAvailable}
+        busy={exportBusy}
+        onDismiss={() => {
+          if (exportBusy) return;
+          setShowExport(false);
+        }}
+        onExport={handleExport}
       />
 
       <Portal>

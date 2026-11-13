@@ -114,6 +114,10 @@ import {
   DefaultSplitPreviewScreen,
   readDefaultSplitShot,
 } from "./screens/DefaultSplitPreviewScreen";
+import {
+  GroupExportPreviewScreen,
+  readGroupExportShot,
+} from "./screens/GroupExportPreviewScreen";
 import { extractBillSplitToken } from "./utils/billSplit";
 import { NotificationDetailScreen } from "./screens/NotificationDetailScreen";
 import { NotificationsScreen } from "./screens/NotificationsScreen";
@@ -1468,6 +1472,13 @@ function AppContent() {
         )}
       />
     );
+  }
+
+  if (__DEV__ && previewParam === "group-export") {
+    const shot = readGroupExportShot(
+      Platform.OS === "web" && typeof window !== "undefined" ? window.location.href : null,
+    );
+    return <GroupExportPreviewScreen key={`group-export-${shot}`} shot={shot} />;
   }
 
   if (__DEV__ && (previewParam === "default-split" || devDefaultSplit)) {
