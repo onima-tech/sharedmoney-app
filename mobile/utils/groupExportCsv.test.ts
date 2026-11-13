@@ -196,3 +196,33 @@ Deno.test("csv skips income rows", () => {
   assertEquals(csv.includes("Salary"), false);
   assertEquals(linesOf(csv).length, 2);
 });
+
+Deno.test("csv prefixes formula-leading text cells and leaves negative amounts numeric", () => {
+  const payer: Participant = {
+    id: "payer",
+    group_id: GROUP,
+    type: "member",
+    full_name: "+cmd",
+  };
+  const csv = document(
+    [
+      expense({
+        id: 1,
+        date: "2026-04-01",
+        description: '=HYPERLINK("x")',
+        category: "-Travel",
+        amount: -12.5,
+        paid_by_participant_id: "payer",
+        splits: [{ participant_id: "payer", amount: 0 }],
+      }),
+    ],
+    [],
+    [payer],
+  );
+  const body = csv.slice(1);
+  assertEquals(
+    body,
+    "date,description,category,payer,amount,currency,'+cmd\n" +
+      "2026-04-01,\"'=HYPERLINK(\"\"x\"\")\",'-Travel,'+cmd,-12.5,INR,0\n",
+  );
+});

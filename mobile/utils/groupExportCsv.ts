@@ -31,6 +31,14 @@ function csvField(value: string): string {
   return value;
 }
 
+/** Excel and Sheets run a text cell that starts with one of these as a formula. */
+const FORMULA_START = /^[=+\-@\t\r]/;
+
+function csvTextField(value: string): string {
+  const text = FORMULA_START.test(value) ? `'${value}` : value;
+  return csvField(text);
+}
+
 function isoDate(value: string | null | undefined): string {
   if (!value) return "";
   const match = /^(\d{4}-\d{2}-\d{2})/.exec(value);
@@ -74,17 +82,17 @@ export function buildGroupCsv(input: {
     return a.payer < b.payer ? -1 : a.payer > b.payer ? 1 : 0;
   });
   const lines = [
-    header.map(csvField).join(","),
+    header.map(csvTextField).join(","),
     ...sorted.map((row) =>
       [
-        row.date,
-        row.description,
-        row.category,
-        row.payer,
-        formatCsvAmount(row.amount),
-        row.currency,
-        ...shareCells(input.members, row.shares),
-      ].map(csvField).join(",")
+        csvField(row.date),
+        csvTextField(row.description),
+        csvTextField(row.category),
+        csvTextField(row.payer),
+        csvField(formatCsvAmount(row.amount)),
+        csvField(row.currency),
+        ...shareCells(input.members, row.shares).map(csvField),
+      ].join(",")
     ),
   ];
   return `\uFEFF${lines.join("\n")}\n`;
