@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
+import template from "../index.html?raw";
 import vercelConfig from "../../vercel.json";
+import { renderPage } from "../scripts/build-seo-pages.mjs";
 import { sitemapLocsMatchingRedirects } from "./sitemapRedirects.mjs";
 import { normalizeSeoPath, pageByPath, relatedPages, seoPages } from "./seoPages";
+
+const SPLIT_BILL_TITLE = "Bill Split Calculator: Tax, Tip and Fees, Free | SharedMoney";
+const SPLIT_BILL_DESCRIPTION =
+  "Free bill splitter: split a bill with tax, tip and fees, evenly or by weight, for up to 20 people. No sign-up; values stay in your browser.";
+const SPLIT_BILL_H1 = "Split a bill fairly, down to the last cent.";
 
 function sitemapLoc(pagePath: string) {
   return `https://sharedmoney.app${pagePath === "/" ? "" : pagePath}`;
@@ -81,6 +88,59 @@ describe("SEO route content", () => {
     expect(proof.some((item) => item.toLowerCase().includes("payment instruments"))).toBe(
       false,
     );
+  });
+
+  it("retargets split-bill calculator search metadata and keeps the visible H1", () => {
+    const page = pageByPath.get("/tools/split-bill-calculator");
+    expect(page).toBeDefined();
+    if (!page) return;
+
+    expect(page.path).toBe("/tools/split-bill-calculator");
+    expect(page.updated).toBe("2026-11-13");
+    expect(page.title).toBe(SPLIT_BILL_TITLE);
+    expect(page.title.length).toBeLessThanOrEqual(60);
+    expect(page.description).toBe(SPLIT_BILL_DESCRIPTION);
+    expect(page.description.length).toBeLessThanOrEqual(155);
+    expect(page.description).toContain("bill splitter");
+    expect(page.heading).toBe(SPLIT_BILL_H1);
+    expect(page.eyebrow).toBe("Free split bill calculator");
+    expect(page.body).toBe(
+      "Add the subtotal, fixed fees, optional tip, currency, and the people sharing the bill. Choose equal weights or adjust weights for an uneven split; your values stay in this browser.",
+    );
+
+    const tools = pageByPath.get("/tools");
+    const toolCard = tools ? relatedPages(tools).find((related) => related.id === page.id) : undefined;
+    expect(toolCard?.heading).toBe(SPLIT_BILL_H1);
+    expect(toolCard?.body).toBe(page.body);
+    expect(toolCard?.eyebrow).toBe(page.eyebrow);
+
+    const html = renderPage(template, page);
+    expect(html).toContain(`<title>${SPLIT_BILL_TITLE}</title>`);
+    expect(html).toContain(`<meta name="title" content="${SPLIT_BILL_TITLE}" />`);
+    expect(html).toContain(`<meta name="description" content="${SPLIT_BILL_DESCRIPTION}" />`);
+    expect(html).toContain(`<meta property="og:title" content="${SPLIT_BILL_TITLE}" />`);
+    expect(html).toContain(`<meta property="og:description" content="${SPLIT_BILL_DESCRIPTION}" />`);
+    expect(html).toContain(`<meta property="twitter:title" content="${SPLIT_BILL_TITLE}" />`);
+    expect(html).toContain(`<meta property="twitter:description" content="${SPLIT_BILL_DESCRIPTION}" />`);
+    expect(html).toContain(`<link rel="canonical" href="https://sharedmoney.app/tools/split-bill-calculator" />`);
+    expect(html).toContain(`<h1>${SPLIT_BILL_H1}</h1>`);
+
+    const jsonLdMatch = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+    expect(jsonLdMatch?.[1]).toBeTruthy();
+    const structured = JSON.parse(jsonLdMatch?.[1] ?? "{}") as {
+      "@graph": Array<{ "@type": string; name?: string; description?: string }>;
+    };
+    const webPage = structured["@graph"].find((node) => node["@type"] === "WebPage");
+    const webApp = structured["@graph"].find((node) => node["@type"] === "WebApplication");
+    expect(webPage?.name).toBe(SPLIT_BILL_TITLE);
+    expect(webPage?.description).toBe(SPLIT_BILL_DESCRIPTION);
+    expect(webApp?.name).toBe(SPLIT_BILL_H1);
+    expect(webApp?.description).toBe(SPLIT_BILL_DESCRIPTION);
+
+    const body = html.split("</head>")[1] ?? "";
+    expect(body).not.toContain(SPLIT_BILL_TITLE);
+    expect(body).not.toContain(SPLIT_BILL_DESCRIPTION);
+    expect(body).toContain(`<h1>${SPLIT_BILL_H1}</h1>`);
   });
 
   it("only resolves known paths and maintains related-page links", () => {

@@ -140,6 +140,42 @@ for (const page of pages) {
   }
 }
 
+const splitBillTitle = "Bill Split Calculator: Tax, Tip and Fees, Free | SharedMoney";
+const splitBillDescription =
+  "Free bill splitter: split a bill with tax, tip and fees, evenly or by weight, for up to 20 people. No sign-up; values stay in your browser.";
+const splitBillH1 = "Split a bill fairly, down to the last cent.";
+const splitBill = pages.find((page) => page.path === "/tools/split-bill-calculator");
+report(Boolean(splitBill), "/tools/split-bill-calculator must exist.");
+report(splitBillTitle.length <= 60, "Split-bill title must stay within 60 characters.");
+report(splitBillDescription.length <= 155, "Split-bill description must stay within 155 characters.");
+if (splitBill) {
+  report(splitBill.title === splitBillTitle, "/tools/split-bill-calculator: title must lead with Bill Split Calculator.");
+  report(splitBill.description === splitBillDescription, "/tools/split-bill-calculator: description must use bill splitter wording.");
+  report(splitBill.heading === splitBillH1, "/tools/split-bill-calculator: visible H1 must stay unchanged.");
+  report(splitBill.updated === "2026-11-13", "/tools/split-bill-calculator: sitemap lastmod must be 2026-11-13.");
+  const splitHtml = await readFile(outputPath(splitBill), "utf8");
+  report(splitHtml.includes(`<title>${splitBillTitle}</title>`), "/tools/split-bill-calculator: built title mismatch.");
+  report(
+    splitHtml.includes(`<meta name="description" content="${splitBillDescription}" />`),
+    "/tools/split-bill-calculator: built meta description mismatch.",
+  );
+  report(
+    splitHtml.includes(`<meta property="og:title" content="${splitBillTitle}" />`),
+    "/tools/split-bill-calculator: built og:title mismatch.",
+  );
+  report(
+    splitHtml.includes(`"name":"${splitBillTitle}"`),
+    "/tools/split-bill-calculator: built JSON-LD name mismatch.",
+  );
+  report(
+    splitHtml.includes(`<h1>${splitBillH1}</h1>`),
+    "/tools/split-bill-calculator: built H1 changed.",
+  );
+  const builtBody = splitHtml.split("</head>")[1] ?? "";
+  report(!builtBody.includes(splitBillTitle), "/tools/split-bill-calculator: title leaked into visible HTML.");
+  report(!builtBody.includes(splitBillDescription), "/tools/split-bill-calculator: description leaked into visible HTML.");
+}
+
 const sitemap = await readFile(path.join(distDir, "sitemap.xml"), "utf8");
 const vercel = JSON.parse(await readFile(path.resolve(__dirname, "../../vercel.json"), "utf8"));
 const redirects = Array.isArray(vercel.redirects) ? vercel.redirects : [];

@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import react from "@vitejs/plugin-react";
 import { createServer } from "vite";
 import { renderSeoBodyParagraph } from "../src/homeHeroLead.mjs";
@@ -163,7 +163,7 @@ function replaceMeta(html, selector, markup) {
   return expression.test(html) ? html.replace(expression, markup) : html.replace("</head>", `    ${markup}\n  </head>`);
 }
 
-function renderPage(template, page, rootHtml) {
+export function renderPage(template, page, rootHtml) {
   const canonical = pageUrl(page.path);
   const jsonLd = escapeHtml(JSON.stringify(structuredData(page))).replaceAll("&quot;", '"');
   let html = template
@@ -268,26 +268,33 @@ async function inlineHomeStyles(html) {
     .replace("</body>", `${lateLoader}</body>`);
 }
 
-const template = await readFile(indexPath, "utf8");
-const homeDocument = await renderHomeBody();
+async function buildSeoPages() {
+  const template = await readFile(indexPath, "utf8");
+  const homeDocument = await renderHomeBody();
 
-for (const page of pages) {
-  const rootHtml =
-    page.kind === "home"
-      ? `<div id="root" data-hydrate="home">${homeDocument}</div>`
-      : undefined;
-  let html = renderPage(template, page, rootHtml);
-  if (page.kind === "home") {
-    html = await inlineHomeStyles(html);
+  for (const page of pages) {
+    const rootHtml =
+      page.kind === "home"
+        ? `<div id="root" data-hydrate="home">${homeDocument}</div>`
+        : undefined;
+    let html = renderPage(template, page, rootHtml);
+    if (page.kind === "home") {
+      html = await inlineHomeStyles(html);
+    }
+    const targetDir = page.path === "/" ? distDir : path.join(distDir, page.path);
+    await mkdir(targetDir, { recursive: true });
+    await writeFile(path.join(targetDir, "index.html"), html);
   }
-  const targetDir = page.path === "/" ? distDir : path.join(distDir, page.path);
-  await mkdir(targetDir, { recursive: true });
-  await writeFile(path.join(targetDir, "index.html"), html);
+
+  const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages
+    .map((page) => `  <url><loc>${pageUrl(page.path)}</loc><lastmod>${page.updated}</lastmod></url>`)
+    .join("\n")}\n</urlset>\n`;
+
+  await writeFile(path.join(distDir, "sitemap.xml"), sitemap);
+  await writeFile(path.join(distDir, "404.html"), notFoundMarkup(template));
 }
 
-const sitemap = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages
-  .map((page) => `  <url><loc>${pageUrl(page.path)}</loc><lastmod>${page.updated}</lastmod></url>`)
-  .join("\n")}\n</urlset>\n`;
-
-await writeFile(path.join(distDir, "sitemap.xml"), sitemap);
-await writeFile(path.join(distDir, "404.html"), notFoundMarkup(template));
+const entry = process.argv[1];
+if (entry && import.meta.url === pathToFileURL(path.resolve(entry)).href) {
+  await buildSeoPages();
+}
