@@ -20,11 +20,13 @@ jobs:
     steps:
       - name: Validate PR title
         id: title
+        env:
+          # Passed as an environment variable so quotes in the title are not shell syntax.
+          TITLE: ${{ github.event.pull_request.title }}
         run: |
-          TITLE="${{ github.event.pull_request.title }}"
           # Allow ! for breaking changes (e.g., feat!: or fix!:)
           if [[ ! "$TITLE" =~ ^(feat|fix|chore|docs|refactor)(\(.+\))?(!?): ]]; then
-            echo "::error::PR title must start with feat|fix|chore|docs|refactor (optionally with scope and !). Current title: '$TITLE'"
+            printf '::error::PR title must start with feat|fix|chore|docs|refactor (optionally with scope and !). Current title: %s\n' "$TITLE"
             exit 1
           fi
           
