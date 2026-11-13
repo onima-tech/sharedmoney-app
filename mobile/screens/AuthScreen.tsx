@@ -85,6 +85,8 @@ type WhatsAppOtpIssue =
 const PHONE_FIELD_HEIGHT = 56;
 const PHONE_FIELD_RADIUS = 4;
 const OTP_CODE_LENGTH = 6;
+/** Widest method label ("Continue with WhatsApp") so icon columns share one x. */
+const METHOD_LABEL_MIN_WIDTH = 196;
 
 function browserUnavailableAlertButtons(
   whatsappEnabled: boolean,
@@ -221,6 +223,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     () => Platform.OS !== "ios",
   );
   const [showPassword, setShowPassword] = useState(false);
+  const [phoneFieldFocused, setPhoneFieldFocused] = useState(false);
+  const [countryFieldFocused, setCountryFieldFocused] = useState(false);
   const [otpIssue, setOtpIssue] = useState<WhatsAppOtpIssue>(initialOtpIssue);
   const [formError, setFormError] = useState<string | null>(
     messageForOtpIssue(initialOtpIssue) ?? previewFormError,
@@ -328,6 +332,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       return () => clearTimeout(focusTimer);
     }
     if (authStep === "phone") {
+      setPhoneFieldFocused(true);
       const focusTimer = setTimeout(() => phoneInputRef.current?.focus(), 0);
       return () => clearTimeout(focusTimer);
     }
@@ -669,6 +674,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     }
   };
 
+  const phoneControlBorder = (focused: boolean) => {
+    if (formError) return theme.colors.error;
+    if (focused) return theme.colors.primary;
+    return theme.colors.outline;
+  };
+
   const renderLogo = (size: "compact" | "desktop") => (
     <Image
       source={require("../assets/logo.png")}
@@ -743,16 +754,19 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           loading={googleLoading}
           style={styles.methodButton}
           contentStyle={styles.methodButtonContent}
+          labelStyle={styles.methodButtonLabel}
         >
           Continue with Google
         </Button>
 
         <Button
           mode="outlined"
+          icon="email"
           onPress={showEmailForm}
           disabled={formDisabled}
           style={styles.methodButton}
           contentStyle={styles.methodButtonContent}
+          labelStyle={styles.methodButtonLabel}
         >
           Continue with email
         </Button>
@@ -765,6 +779,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             disabled={formDisabled}
             style={styles.methodButton}
             contentStyle={styles.methodButtonContent}
+            labelStyle={styles.methodButtonLabel}
             accessibilityLabel="Continue with WhatsApp"
           >
             Continue with WhatsApp
@@ -902,11 +917,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       <View style={styles.phoneRow}>
         <Pressable
           onPress={() => setShowCountryPicker(true)}
+          onFocus={() => setCountryFieldFocused(true)}
+          onBlur={() => setCountryFieldFocused(false)}
           disabled={formDisabled}
           style={[
             styles.countryButton,
             {
-              borderColor: formError ? theme.colors.error : theme.colors.outline,
+              borderColor: phoneControlBorder(countryFieldFocused),
               backgroundColor: theme.colors.surface,
             },
           ]}
@@ -920,7 +937,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           style={[
             styles.phoneInputShell,
             {
-              borderColor: formError ? theme.colors.error : theme.colors.outline,
+              borderColor: phoneControlBorder(phoneFieldFocused),
               backgroundColor: theme.colors.surface,
             },
           ]}
@@ -934,8 +951,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
               );
               clearFormError();
             }}
-            placeholder="Phone number"
-            placeholderTextColor={theme.colors.onSurfaceVariant}
+            onFocus={() => setPhoneFieldFocused(true)}
+            onBlur={() => setPhoneFieldFocused(false)}
             keyboardType="phone-pad"
             autoComplete="tel"
             textContentType="telephoneNumber"
@@ -944,6 +961,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             style={[
               styles.phoneInput,
               { color: theme.colors.onSurface },
+              Platform.OS === "web" ? styles.phoneInputWeb : null,
             ]}
           />
         </View>
@@ -1222,9 +1240,13 @@ const styles = StyleSheet.create({
   desktopScrollContent: {
     flexDirection: "row",
     minHeight: "100%",
+    width: "100%",
+    alignItems: "stretch",
     justifyContent: "flex-start",
-    padding: 0,
+    // `padding: 0` does not clear scrollContent's paddingHorizontal / paddingBottom on web.
     paddingTop: 0,
+    paddingBottom: 0,
+    paddingHorizontal: 0,
   },
   desktopBrandPane: {
     flex: 1.32,
@@ -1269,9 +1291,11 @@ const styles = StyleSheet.create({
     justifyContent: "flex-start",
   },
   desktopAuthPane: {
+    alignSelf: "stretch",
     flex: 0.68,
     justifyContent: "center",
     minWidth: 420,
+    minHeight: "100%",
     paddingHorizontal: 48,
     paddingTop: 56,
   },
@@ -1303,6 +1327,10 @@ const styles = StyleSheet.create({
   },
   methodButtonContent: {
     minHeight: 48,
+  },
+  methodButtonLabel: {
+    minWidth: METHOD_LABEL_MIN_WIDTH,
+    textAlign: "left",
   },
   appleButtonContainer: {
     height: 48,
@@ -1390,6 +1418,10 @@ const styles = StyleSheet.create({
     margin: 0,
     paddingHorizontal: 12,
     paddingVertical: 0,
+  },
+  phoneInputWeb: {
+    outlineStyle: "solid",
+    outlineWidth: 0,
   },
   resendButton: {
     marginTop: 8,
